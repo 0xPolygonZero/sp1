@@ -1,5 +1,5 @@
 use p3_field::AbstractField;
-use sp1_stark::air::SP1AirBuilder;
+use sp1_stark::air::{BaseAirBuilder, SP1AirBuilder};
 
 use crate::{
     air::{MemoryAirBuilder, WordAirBuilder},
@@ -17,12 +17,21 @@ impl CpuChip {
         clk: AB::Expr,
     ) {
         // Load immediates into b and c, if the immediate flags are on.
+        let first =
+            local.op_b_val().0[0] + (local.op_b_val().0[1] * AB::F::from_canonical_u16(1 << 8));
+        let second =
+            local.op_b_val().0[2] + (local.op_b_val().0[3] * AB::F::from_canonical_u16(1 << 8));
         builder
             .when(local.instruction.imm_b)
-            .assert_word_eq(local.op_b_val(), local.instruction.op_b);
+            .assert_all_eq([first, second], local.instruction.op_b.0);
+
+        let first =
+            local.op_c_val().0[0] + (local.op_c_val().0[1] * AB::F::from_canonical_u16(1 << 8));
+        let second =
+            local.op_c_val().0[2] + (local.op_c_val().0[3] * AB::F::from_canonical_u16(1 << 8));
         builder
             .when(local.instruction.imm_c)
-            .assert_word_eq(local.op_c_val(), local.instruction.op_c);
+            .assert_all_eq([first, second], local.instruction.op_c.0);
 
         // If they are not immediates, read `b` and `c` from memory.
         builder.eval_memory_access(
