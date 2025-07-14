@@ -7,7 +7,7 @@ use p3_air::AirBuilder;
 use p3_field::{AbstractField, Field};
 use serde::{Deserialize, Serialize};
 use sp1_derive::AlignedBorrow;
-use sp1_primitives::consts::WORD_SIZE;
+use sp1_primitives::consts::{SMALL_WORD_SIZE, WORD_SIZE};
 use std::array::IntoIter;
 
 /// An array of four bytes to represent a 32-bit value.
@@ -97,5 +97,38 @@ impl<T: Clone> FromIterator<T> for Word<T> {
         let elements = iter.into_iter().take(WORD_SIZE).collect_vec();
 
         Word(array_ref![elements, 0, WORD_SIZE].clone())
+    }
+}
+
+/// An array of two u16s to represent a 32-bit value.
+///
+/// We use the generic type `T` to represent the different representations of a 16-bit chunk, ranging from
+/// a `u8` to a `AB::Var` or `AB::Expr`.
+#[derive(
+    AlignedBorrow, Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize,
+)]
+#[repr(C)]
+pub struct SmallWord<T>(pub [T; SMALL_WORD_SIZE]);
+
+impl<F: AbstractField> From<u32> for SmallWord<F> {
+    fn from(value: u32) -> Self {
+        SmallWord([
+            F::from_canonical_u16(value as u16),
+            F::from_canonical_u16((value >> 16) as u16),
+        ])
+    }
+}
+
+impl<T> Index<usize> for SmallWord<T> {
+    type Output = T;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.0[index]
+    }
+}
+
+impl<T> IndexMut<usize> for SmallWord<T> {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.0[index]
     }
 }

@@ -11,7 +11,7 @@
   "ShiftLeft": 68,
   "Auipc": 41,
   "KeccakPermute": 3905,
-  "Program": 31,
+  "Program": 27,
   "MemoryLocal": 100,
   "Global": 428,
   "Secp256k1AddAssign": 4461,
@@ -40,7 +40,7 @@
   "SyscallCore": 22,
   "Bn254Fp2AddSubAssign": 1454,
   "Bls12381FpOpAssign": 1098,
-  "Cpu": 109,
+  "Cpu": 105,
   "ShaCompress": 506,
   "MemoryInstrs": 93,
   "Secp256k1DoubleAssign": 4564

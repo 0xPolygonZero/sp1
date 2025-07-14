@@ -4,6 +4,9 @@ pub const MAXIMUM_MEMORY_SIZE: u32 = u32::MAX;
 /// The number of bits in a byte.
 pub const BYTE_SIZE: usize = 8;
 
+/// The size of a word in u16s.
+pub const SMALL_WORD_SIZE: usize = 2;
+
 /// The size of a word in bytes.
 pub const WORD_SIZE: usize = 4;
 
