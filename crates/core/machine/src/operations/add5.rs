@@ -90,16 +90,16 @@ impl<F: Field> Add5Operation<F> {
     pub fn eval<AB: SP1AirBuilder>(
         builder: &mut AB,
         words: &[Word<AB::Var>; 5],
-        is_real: AB::Var,
+        is_real: AB::Expr,
         cols: Add5Operation<AB::Var>,
     ) {
-        builder.assert_bool(is_real);
+        builder.assert_bool(is_real.clone());
         // Range check each byte.
         {
-            words.iter().for_each(|word| builder.slice_range_check_u8(&word.0, is_real));
-            builder.slice_range_check_u8(&cols.value.0, is_real);
+            words.iter().for_each(|word| builder.slice_range_check_u8(&word.0, is_real.clone()));
+            builder.slice_range_check_u8(&cols.value.0, is_real.clone());
         }
-        let mut builder_is_real = builder.when(is_real);
+        let mut builder_is_real = builder.when(is_real.clone());
 
         // Each value in is_carry_{0,1,2,3,4} is 0 or 1, and exactly one of them is 1 per digit.
         {
@@ -110,11 +110,11 @@ impl<F: Field> Add5Operation<F> {
                 builder_is_real.assert_bool(cols.is_carry_3[i]);
                 builder_is_real.assert_bool(cols.is_carry_4[i]);
                 builder_is_real.assert_eq(
-                    cols.is_carry_0[i] +
-                        cols.is_carry_1[i] +
-                        cols.is_carry_2[i] +
-                        cols.is_carry_3[i] +
-                        cols.is_carry_4[i],
+                    cols.is_carry_0[i]
+                        + cols.is_carry_1[i]
+                        + cols.is_carry_2[i]
+                        + cols.is_carry_3[i]
+                        + cols.is_carry_4[i],
                     AB::Expr::one(),
                 );
             }
@@ -130,10 +130,10 @@ impl<F: Field> Add5Operation<F> {
             for i in 0..WORD_SIZE {
                 builder_is_real.assert_eq(
                     cols.carry[i],
-                    cols.is_carry_1[i] * one.clone() +
-                        cols.is_carry_2[i] * two +
-                        cols.is_carry_3[i] * three +
-                        cols.is_carry_4[i] * four,
+                    cols.is_carry_1[i] * one.clone()
+                        + cols.is_carry_2[i] * two
+                        + cols.is_carry_3[i] * three
+                        + cols.is_carry_4[i] * four,
                 );
             }
         }

@@ -96,7 +96,7 @@ where
             *local.w_i_minus_15.value(),
             7,
             local.w_i_minus_15_rr_7,
-            local.is_real,
+            local.is_real.into(),
         );
         // w[i-15] rightrotate 18.
         FixedRotateRightOperation::<AB::F>::eval(
@@ -104,7 +104,7 @@ where
             *local.w_i_minus_15.value(),
             18,
             local.w_i_minus_15_rr_18,
-            local.is_real,
+            local.is_real.into(),
         );
         // w[i-15] rightshift 3.
         FixedShiftRightOperation::<AB::F>::eval(
@@ -120,7 +120,7 @@ where
             local.w_i_minus_15_rr_7.value,
             local.w_i_minus_15_rr_18.value,
             local.s0_intermediate,
-            local.is_real,
+            local.is_real.into(),
         );
         // s0 := (w[i-15] rightrotate 7) xor (w[i-15] rightrotate 18) xor (w[i-15] rightshift 3)
         XorOperation::<AB::F>::eval(
@@ -128,7 +128,7 @@ where
             local.s0_intermediate.value,
             local.w_i_minus_15_rs_3.value,
             local.s0,
-            local.is_real,
+            local.is_real.into(),
         );
 
         // Compute `s1`.
@@ -138,7 +138,7 @@ where
             *local.w_i_minus_2.value(),
             17,
             local.w_i_minus_2_rr_17,
-            local.is_real,
+            local.is_real.into(),
         );
         // w[i-2] rightrotate 19.
         FixedRotateRightOperation::<AB::F>::eval(
@@ -146,7 +146,7 @@ where
             *local.w_i_minus_2.value(),
             19,
             local.w_i_minus_2_rr_19,
-            local.is_real,
+            local.is_real.into(),
         );
         // w[i-2] rightshift 10.
         FixedShiftRightOperation::<AB::F>::eval(
@@ -162,7 +162,7 @@ where
             local.w_i_minus_2_rr_17.value,
             local.w_i_minus_2_rr_19.value,
             local.s1_intermediate,
-            local.is_real,
+            local.is_real.into(),
         );
         // s1 := (w[i-2] rightrotate 17) xor (w[i-2] rightrotate 19) xor (w[i-2] rightshift 10)
         XorOperation::<AB::F>::eval(
@@ -170,7 +170,7 @@ where
             local.s1_intermediate.value,
             local.w_i_minus_2_rs_10.value,
             local.s1,
-            local.is_real,
+            local.is_real.into(),
         );
 
         // s2 := w[i-16] + s0 + w[i-7] + s1.

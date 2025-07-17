@@ -42,7 +42,7 @@ impl<F: Field> XorOperation<F> {
         a: Word<AB::Var>,
         b: Word<AB::Var>,
         cols: XorOperation<AB::Var>,
-        is_real: AB::Var,
+        is_real: AB::Expr,
     ) {
         for i in 0..WORD_SIZE {
             builder.send_byte(
@@ -50,7 +50,7 @@ impl<F: Field> XorOperation<F> {
                 cols.value[i],
                 a[i],
                 b[i],
-                is_real,
+                is_real.clone(),
             );
         }
     }

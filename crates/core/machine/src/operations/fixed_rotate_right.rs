@@ -96,7 +96,7 @@ impl<F: Field> FixedRotateRightOperation<F> {
         input: Word<AB::Var>,
         rotation: usize,
         cols: FixedRotateRightOperation<AB::Var>,
-        is_real: AB::Var,
+        is_real: AB::Expr,
     ) {
         // Compute some constants with respect to the rotation needed for the rotation.
         let nb_bytes_to_shift = Self::nb_bytes_to_shift(rotation);
@@ -122,7 +122,7 @@ impl<F: Field> FixedRotateRightOperation<F> {
                 cols.carry[i],
                 input_bytes_rotated[i],
                 AB::F::from_canonical_usize(nb_bits_to_shift),
-                is_real,
+                is_real.clone(),
             );
 
             if i == WORD_SIZE - 1 {

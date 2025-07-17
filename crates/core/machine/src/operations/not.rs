@@ -29,7 +29,7 @@ impl<F: Field> NotOperation<F> {
         builder: &mut AB,
         a: Word<AB::Var>,
         cols: NotOperation<AB::Var>,
-        is_real: impl Into<AB::Expr> + Copy,
+        is_real: impl Into<AB::Expr> + Clone,
     ) {
         for i in (0..WORD_SIZE).step_by(2) {
             builder.send_byte_pair(
@@ -38,14 +38,14 @@ impl<F: Field> NotOperation<F> {
                 AB::F::zero(),
                 a[i],
                 a[i + 1],
-                is_real,
+                is_real.clone().into(),
             );
         }
 
         // For any byte b, b + !b = 0xFF.
         for i in 0..WORD_SIZE {
             builder
-                .when(is_real)
+                .when(is_real.clone().into())
                 .assert_eq(cols.value[i] + a[i], AB::F::from_canonical_u8(u8::MAX));
         }
     }
