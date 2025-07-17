@@ -52,7 +52,8 @@ impl<P: FpOpField> Syscall for FpOpSyscall<P> {
         let result = match self.op {
             FieldOperation::Add => (a + b) % modulus,
             FieldOperation::Sub => ((a + modulus) - b) % modulus,
-            FieldOperation::Mul => (a * b) % modulus,
+            // The scaling factor should already be fused into the b value.
+            FieldOperation::Mul | FieldOperation::ScaledMul => (a * b) % modulus,
             _ => panic!("Unsupported operation"),
         };
         let mut result = result.to_u32_digits();

@@ -24,7 +24,7 @@ use sp1_curves::{
     AffinePoint, EllipticCurve,
 };
 use sp1_derive::AlignedBorrow;
-use sp1_stark::air::{BaseAirBuilder, InteractionScope, MachineAir, SP1AirBuilder};
+use sp1_stark::air::{BaseAirBuilder, InteractionScope, MachineAir, Polynomial, SP1AirBuilder};
 
 use crate::{
     memory::{value_as_limbs, MemoryReadCols, MemoryWriteCols},
@@ -54,7 +54,6 @@ pub struct EdAddAssignCols<T> {
     pub(crate) y3_numerator: FieldInnerProductCols<T, Ed25519BaseField>,
     pub(crate) x1_mul_y1: FieldOpCols<T, Ed25519BaseField>,
     pub(crate) x2_mul_y2: FieldOpCols<T, Ed25519BaseField>,
-    pub(crate) f: FieldOpCols<T, Ed25519BaseField>,
     pub(crate) d_mul_f: FieldOpCols<T, Ed25519BaseField>,
     pub(crate) x3_ins: FieldDenCols<T, Ed25519BaseField>,
     pub(crate) y3_ins: FieldDenCols<T, Ed25519BaseField>,
@@ -93,10 +92,14 @@ impl<E: EllipticCurve + EdwardsParameters> EdAddAssignChip<E> {
         );
         let x1_mul_y1 = cols.x1_mul_y1.populate(record, &p_x, &p_y, FieldOperation::Mul);
         let x2_mul_y2 = cols.x2_mul_y2.populate(record, &q_x, &q_y, FieldOperation::Mul);
-        let f = cols.f.populate(record, &x1_mul_y1, &x2_mul_y2, FieldOperation::Mul);
 
-        let d = E::d_biguint();
-        let d_mul_f = cols.d_mul_f.populate(record, &f, &d, FieldOperation::Mul);
+        let d_mul_f = cols.d_mul_f.populate_mul_scale(
+            record,
+            &x1_mul_y1,
+            &x2_mul_y2,
+            &E::d_biguint(),
+            &Ed25519BaseField::modulus(),
+        );
 
         let x3 = cols.x3_ins.populate(record, &x3_numerator, &d_mul_f, true);
         let y3 = cols.y3_ins.populate(record, &y3_numerator, &d_mul_f, false);
@@ -272,13 +275,27 @@ where
 
         let x1_mul_y1 = local.x1_mul_y1.result;
         let x2_mul_y2 = local.x2_mul_y2.result;
-        local.f.eval(builder, &x1_mul_y1, &x2_mul_y2, FieldOperation::Mul, local.is_real);
 
-        // d * f.
-        let f = local.f.result;
+        // Compute x1_mul_y1 * x2_mul_y2 * d.
         let d_biguint = E::d_biguint();
         let d_const = E::BaseField::to_limbs_field::<AB::Expr, _>(&d_biguint);
-        local.d_mul_f.eval(builder, &f, &d_const, FieldOperation::Mul, local.is_real);
+
+        let x1_mul_y1_poly: Polynomial<AB::Expr> = x1_mul_y1.into();
+        let x2_mul_y2_poly: Polynomial<AB::Expr> = x2_mul_y2.into();
+        let d_poly: Polynomial<AB::Expr> = d_const.into();
+        let x1_mul_y1_x2_mul_y2 = &x1_mul_y1_poly * &x2_mul_y2_poly;
+        let x1_mul_y1_x2_mul_y2_d = x1_mul_y1_x2_mul_y2 * d_poly;
+
+        let p_modulus =
+            Polynomial::from_iter(E::BaseField::modulus_field_iter::<AB::F>().map(AB::Expr::from));
+        let p_result: Polynomial<AB::Expr> = local.d_mul_f.result.into();
+        local.d_mul_f.eval_with_polynomials(
+            builder,
+            x1_mul_y1_x2_mul_y2_d,
+            p_modulus,
+            p_result,
+            local.is_real,
+        );
 
         let d_mul_f = local.d_mul_f.result;
 

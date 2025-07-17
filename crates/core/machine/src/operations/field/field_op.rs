@@ -108,14 +108,18 @@ impl<F: PrimeField32, P: FieldParameters> FieldOpCols<F, P> {
         let p_b: Polynomial<F> = P::to_limbs_field::<F, _>(b).into();
         let (result, carry) = match op {
             FieldOperation::Add => ((a + b) % modulus, (a + b - (a + b) % modulus) / modulus),
-            FieldOperation::Mul => ((a * b) % modulus, (a * b - (a * b) % modulus) / modulus),
+            FieldOperation::Mul | FieldOperation::ScaledMul => {
+                ((a * b) % modulus, (a * b - (a * b) % modulus) / modulus)
+            }
             FieldOperation::Sub | FieldOperation::Div => unreachable!(),
         };
         debug_assert!(&result < modulus);
         debug_assert!(&carry < modulus);
         match op {
             FieldOperation::Add => debug_assert_eq!(&carry * modulus, a + b - &result),
-            FieldOperation::Mul => debug_assert_eq!(&carry * modulus, a * b - &result),
+            FieldOperation::Mul | FieldOperation::ScaledMul => {
+                debug_assert_eq!(&carry * modulus, a * b - &result)
+            }
             FieldOperation::Sub | FieldOperation::Div => unreachable!(),
         }
 
@@ -131,7 +135,7 @@ impl<F: PrimeField32, P: FieldParameters> FieldOpCols<F, P> {
         // Compute the vanishing polynomial.
         let p_op = match op {
             FieldOperation::Add => &p_a + &p_b,
-            FieldOperation::Mul => &p_a * &p_b,
+            FieldOperation::Mul | FieldOperation::ScaledMul => &p_a * &p_b,
             FieldOperation::Sub | FieldOperation::Div => unreachable!(),
         };
         let p_vanishing: Polynomial<F> = &p_op - &p_result - &p_carry * &p_modulus;
@@ -236,6 +240,28 @@ impl<F: PrimeField32, P: FieldParameters> FieldOpCols<F, P> {
     ) -> BigUint {
         self.populate_with_modulus(record, a, b, &P::modulus(), op)
     }
+
+    /// Populate a scaled multiplication operation: result = a * b * scale.
+    /// This is more efficient than separate multiplication and scaling operations.
+    pub fn populate_mul_scale(
+        &mut self,
+        record: &mut impl ByteRecord,
+        a: &BigUint,
+        b: &BigUint,
+        scale: &BigUint,
+        modulus: &BigUint,
+    ) -> BigUint {
+        // Compute a * b * scale mod modulus
+        let ab_scale = (a * b * scale) % modulus;
+
+        // For constraint generation, we need to show that a * b * scale = result + carry * modulus
+        // We can rewrite this as a * (b * scale) = result + carry * modulus, reusing the regular
+        // multiplication logic.
+        let b_scale = b * scale;
+        self.populate_with_modulus(record, a, &b_scale, modulus, FieldOperation::ScaledMul);
+
+        ab_scale
+    }
 }
 
 impl<V: Copy, P: FieldParameters> FieldOpCols<V, P> {
@@ -317,12 +343,14 @@ impl<V: Copy, P: FieldParameters> FieldOpCols<V, P> {
         let p_b: Polynomial<AB::Expr> = (b).clone().into();
 
         let (p_a, p_result): (Polynomial<_>, Polynomial<_>) = match op {
-            FieldOperation::Add | FieldOperation::Mul => (p_a_param, self.result.into()),
+            FieldOperation::Add | FieldOperation::Mul | FieldOperation::ScaledMul => {
+                (p_a_param, self.result.into())
+            }
             FieldOperation::Sub | FieldOperation::Div => (self.result.into(), p_a_param),
         };
         let p_op: Polynomial<<AB as AirBuilder>::Expr> = match op {
             FieldOperation::Add | FieldOperation::Sub => p_a + p_b,
-            FieldOperation::Mul | FieldOperation::Div => p_a * p_b,
+            FieldOperation::Mul | FieldOperation::ScaledMul | FieldOperation::Div => p_a * p_b,
         };
         self.eval_with_polynomials(builder, p_op, modulus.clone(), p_result, is_real);
     }
@@ -370,6 +398,36 @@ impl<V: Copy, P: FieldParameters> FieldOpCols<V, P> {
     {
         let p_limbs = Polynomial::from_iter(P::modulus_field_iter::<AB::F>().map(AB::Expr::from));
         self.eval_with_modulus::<AB>(builder, a, b, &p_limbs, op, is_real);
+    }
+
+    /// Evaluate a scaled multiplication operation with efficient constraint generation.
+    /// This method is specifically optimized for ScaledMul operations.
+    #[allow(clippy::too_many_arguments)]
+    pub fn eval_with_scale<AB: SP1AirBuilder<Var = V>>(
+        &self,
+        builder: &mut AB,
+        a: &(impl Into<Polynomial<AB::Expr>> + Clone),
+        b: &(impl Into<Polynomial<AB::Expr>> + Clone),
+        scale: &num::BigUint,
+        is_real: impl Into<AB::Expr> + Clone,
+    ) where
+        V: Into<AB::Expr>,
+        Limbs<V, P::Limbs>: Copy,
+    {
+        // Convert scale to polynomial
+        let scale_limbs = P::to_limbs_field::<AB::F, _>(scale);
+        let p_scale = Polynomial::from_iter(scale_limbs.0.iter().map(|&limb| AB::Expr::from(limb)));
+
+        // Compute a * b * scale as polynomial
+        let p_a: Polynomial<AB::Expr> = a.clone().into();
+        let p_b: Polynomial<AB::Expr> = b.clone().into();
+        let p_ab = &p_a * &p_b;
+        let p_ab_scale = p_ab * p_scale;
+
+        let p_modulus = Polynomial::from_iter(P::modulus_field_iter::<AB::F>().map(AB::Expr::from));
+        let p_result: Polynomial<AB::Expr> = self.result.into();
+
+        self.eval_with_polynomials(builder, p_ab_scale, p_modulus, p_result, is_real);
     }
 }
 
@@ -509,7 +567,14 @@ mod tests {
 
     #[test]
     fn generate_trace() {
-        for op in [FieldOperation::Add, FieldOperation::Mul, FieldOperation::Sub].iter() {
+        for op in [
+            FieldOperation::Add,
+            FieldOperation::Mul,
+            FieldOperation::ScaledMul,
+            FieldOperation::Sub,
+        ]
+        .iter()
+        {
             println!("op: {op:?}");
             let chip: FieldOpChip<Ed25519BaseField> = FieldOpChip::new(*op);
             let shard = ExecutionRecord::default();

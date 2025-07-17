@@ -23,7 +23,7 @@ use sp1_curves::{
     params::{FieldParameters, Limbs},
 };
 use sp1_derive::AlignedBorrow;
-use sp1_stark::air::{BaseAirBuilder, InteractionScope, MachineAir, SP1AirBuilder};
+use sp1_stark::air::{BaseAirBuilder, InteractionScope, MachineAir, Polynomial, SP1AirBuilder};
 use typenum::U32;
 
 use crate::{
@@ -51,7 +51,6 @@ pub struct EdDecompressCols<T> {
     pub y_access: GenericArray<MemoryReadCols<T>, WordsFieldElement>,
     pub(crate) neg_x_range: FieldLtCols<T, Ed25519BaseField>,
     pub(crate) y_range: FieldLtCols<T, Ed25519BaseField>,
-    pub(crate) yy: FieldOpCols<T, Ed25519BaseField>,
     pub(crate) u: FieldOpCols<T, Ed25519BaseField>,
     pub(crate) dyy: FieldOpCols<T, Ed25519BaseField>,
     pub(crate) v: FieldOpCols<T, Ed25519BaseField>,
@@ -90,9 +89,20 @@ impl<F: PrimeField32> EdDecompressCols<F> {
     ) {
         let one = BigUint::one();
         self.y_range.populate(blu_events, y, &Ed25519BaseField::modulus());
-        let yy = self.yy.populate(blu_events, y, y, FieldOperation::Mul);
+
+        // Compute y*y - 1 for u
+        let yy = (y * y) % &Ed25519BaseField::modulus();
         let u = self.u.populate(blu_events, &yy, &one, FieldOperation::Sub);
-        let dyy = self.dyy.populate(blu_events, &E::d_biguint(), &yy, FieldOperation::Mul);
+
+        // Compute d * y * y directly for dyy
+        let dyy = self.dyy.populate_mul_scale(
+            blu_events,
+            y,
+            y,
+            &E::d_biguint(),
+            &Ed25519BaseField::modulus(),
+        );
+
         let v = self.v.populate(blu_events, &one, &dyy, FieldOperation::Add);
         let u_div_v = self.u_div_v.populate(blu_events, &u, &v, FieldOperation::Div);
 
@@ -117,17 +127,28 @@ impl<V: Copy> EdDecompressCols<V> {
         let max_num_limbs =
             Ed25519BaseField::to_limbs_field::<AB::Expr, AB::F>(&Ed25519BaseField::modulus());
         self.y_range.eval(builder, &y, &max_num_limbs, self.is_real);
-        self.yy.eval(builder, &y, &y, FieldOperation::Mul, self.is_real);
-        self.u.eval(
-            builder,
-            &self.yy.result,
-            &[AB::Expr::one()].iter(),
-            FieldOperation::Sub,
-            self.is_real,
-        );
+
+        // Compute u = y*y - 1
+        let y_poly: Polynomial<AB::Expr> = y.into();
+        let yy_poly = &y_poly * &y_poly;
+        let one_poly = Polynomial::from_iter([AB::Expr::one()]);
+        let u_poly = yy_poly - one_poly;
+
+        let p_modulus =
+            Polynomial::from_iter(E::BaseField::modulus_field_iter::<AB::F>().map(AB::Expr::from));
+        let u_result: Polynomial<AB::Expr> = self.u.result.into();
+        self.u.eval_with_polynomials(builder, u_poly, p_modulus.clone(), u_result, self.is_real);
+
+        // Compute dyy = d * y * y
         let d_biguint = E::d_biguint();
         let d_const = E::BaseField::to_limbs_field::<AB::F, _>(&d_biguint);
-        self.dyy.eval(builder, &d_const, &self.yy.result, FieldOperation::Mul, self.is_real);
+        let d_poly: Polynomial<AB::Expr> = d_const.into();
+        let dyy_poly = &y_poly * &y_poly;
+        let d_dyy_poly = dyy_poly * d_poly;
+
+        let dyy_result: Polynomial<AB::Expr> = self.dyy.result.into();
+        self.dyy.eval_with_polynomials(builder, d_dyy_poly, p_modulus, dyy_result, self.is_real);
+
         self.v.eval(
             builder,
             &[AB::Expr::one()].iter(),

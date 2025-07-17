@@ -52,7 +52,6 @@ pub struct WeierstrassDoubleAssignCols<T, P: FieldParameters + NumWords> {
     pub(crate) slope_denominator: FieldOpCols<T, P>,
     pub(crate) slope_numerator: FieldOpCols<T, P>,
     pub(crate) slope: FieldOpCols<T, P>,
-    pub(crate) p_x_squared: FieldOpCols<T, P>,
     pub(crate) p_x_squared_times_3: FieldOpCols<T, P>,
     pub(crate) slope_squared: FieldOpCols<T, P>,
     pub(crate) p_x_plus_p_x: FieldOpCols<T, P>,
@@ -86,13 +85,12 @@ impl<E: EllipticCurve + WeierstrassParameters> WeierstrassDoubleAssignChip<E> {
         let slope = {
             // slope_numerator = a + (p.x * p.x) * 3.
             let slope_numerator = {
-                let p_x_squared =
-                    cols.p_x_squared.populate(blu_events, &p_x, &p_x, FieldOperation::Mul);
-                let p_x_squared_times_3 = cols.p_x_squared_times_3.populate(
+                let p_x_squared_times_3 = cols.p_x_squared_times_3.populate_mul_scale(
                     blu_events,
-                    &p_x_squared,
+                    &p_x,
+                    &p_x,
                     &BigUint::from(3u32),
-                    FieldOperation::Mul,
+                    &E::BaseField::modulus(),
                 );
                 cols.slope_numerator.populate(
                     blu_events,
@@ -352,13 +350,11 @@ where
         let slope = {
             // slope_numerator = a + (p.x * p.x) * 3.
             {
-                local.p_x_squared.eval(builder, &p_x, &p_x, FieldOperation::Mul, local.is_real);
-
-                local.p_x_squared_times_3.eval(
+                local.p_x_squared_times_3.eval_with_scale(
                     builder,
-                    &local.p_x_squared.result,
-                    &E::BaseField::to_limbs_field::<AB::Expr, _>(&BigUint::from(3u32)),
-                    FieldOperation::Mul,
+                    &p_x,
+                    &p_x,
+                    &BigUint::from(3u32),
                     local.is_real,
                 );
 

@@ -10,6 +10,8 @@ pub enum FieldOperation {
     Add,
     /// Multiplication.
     Mul,
+    /// Scaled multiplication by a constant.
+    ScaledMul,
     /// Subtraction.
     Sub,
     /// Division.
