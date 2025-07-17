@@ -123,14 +123,15 @@ where
                 local.is_branching,
             );
 
+
             // When we are not branching, assert that local.pc + 4 <==> next.pc.
-            builder.when(is_real.clone()).when(local.not_branching).assert_eq(
+            builder.when(is_real.clone()).when(AB::Expr::one() - local.is_branching).assert_eq(
                 local.pc.reduce::<AB>() + AB::Expr::from_canonical_u32(DEFAULT_PC_INC),
                 local.next_pc.reduce::<AB>(),
             );
 
-            // When local.not_branching is true, assert that local.is_real is true.
-            builder.when(local.not_branching).assert_one(is_real.clone());
+            // When we are not branching, assert that local.is_real is true.
+            builder.when(AB::Expr::one() - local.is_branching).assert_one(is_real.clone());
 
             // To prevent the ALU send above to be non-zero when the row is a padding row.
             builder.when_not(is_real.clone()).assert_zero(local.is_branching);
@@ -139,9 +140,7 @@ where
             // branch.
             // The `next_pc` is constrained in both branching and not branching cases, so it is
             // fully constrained.
-            builder.when(is_real.clone()).assert_one(local.is_branching + local.not_branching);
             builder.when(is_real.clone()).assert_bool(local.is_branching);
-            builder.when(is_real.clone()).assert_bool(local.not_branching);
         }
 
         // Evaluate branching value constraints.

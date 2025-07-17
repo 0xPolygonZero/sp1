@@ -127,8 +127,6 @@ impl BranchChip {
 
         if branching {
             cols.is_branching = F::one();
-        } else {
-            cols.not_branching = F::one();
         }
     }
 }
