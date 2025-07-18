@@ -34,7 +34,12 @@ pub const fn num_fp2_mul_cols<P: FieldParameters + NumWords>() -> usize {
     size_of::<Fp2MulAssignCols<u8, P>>()
 }
 
-/// A set of columns for the Fp2Mul operation.
+/// A set of columns for the Fp2Mul operation using Karatsuba optimization.
+///
+/// For (a0 + a1.i) × (b0 + b1.i), Karatsuba computes:
+/// - 2 field additions: a0+a1, b0+b1 (properly constrained)
+/// - 3 multiplications: a0×b0, a1×b1, (a0+a1)×(b0+b1)
+/// - Final results: c0 = a0b0 - a1b1, c1 = (a0+a1)(b0+b1) - a0b0 - a1b1
 #[derive(Debug, Clone, AlignedBorrow)]
 #[repr(C)]
 pub struct Fp2MulAssignCols<T, P: FieldParameters + NumWords> {
@@ -45,12 +50,11 @@ pub struct Fp2MulAssignCols<T, P: FieldParameters + NumWords> {
     pub y_ptr: T,
     pub x_access: GenericArray<MemoryWriteCols<T>, P::WordsCurvePoint>,
     pub y_access: GenericArray<MemoryReadCols<T>, P::WordsCurvePoint>,
+    pub(crate) a0_plus_a1: FieldOpCols<T, P>,
+    pub(crate) b0_plus_b1: FieldOpCols<T, P>,
     pub(crate) a0_mul_b0: FieldOpCols<T, P>,
     pub(crate) a1_mul_b1: FieldOpCols<T, P>,
-    pub(crate) a0_mul_b1: FieldOpCols<T, P>,
-    pub(crate) a1_mul_b0: FieldOpCols<T, P>,
-    pub(crate) c0: FieldOpCols<T, P>,
-    pub(crate) c1: FieldOpCols<T, P>,
+    pub(crate) sum_mul_sum: FieldOpCols<T, P>,
     pub(crate) c0_range: FieldLtCols<T, P>,
     pub(crate) c1_range: FieldLtCols<T, P>,
 }
@@ -76,6 +80,20 @@ impl<P: FpOpField> Fp2MulAssignChip<P> {
     ) {
         let modulus_bytes = P::MODULUS;
         let modulus = BigUint::from_bytes_le(modulus_bytes);
+        let a0_plus_a1 = cols.a0_plus_a1.populate_with_modulus(
+            blu_events,
+            &p_x,
+            &p_y,
+            &modulus,
+            FieldOperation::Add,
+        );
+        let b0_plus_b1 = cols.b0_plus_b1.populate_with_modulus(
+            blu_events,
+            &q_x,
+            &q_y,
+            &modulus,
+            FieldOperation::Add,
+        );
         let a0_mul_b0 = cols.a0_mul_b0.populate_with_modulus(
             blu_events,
             &p_x,
@@ -90,34 +108,15 @@ impl<P: FpOpField> Fp2MulAssignChip<P> {
             &modulus,
             FieldOperation::Mul,
         );
-        let a0_mul_b1 = cols.a0_mul_b1.populate_with_modulus(
+        let sum_mul_sum = cols.sum_mul_sum.populate_with_modulus(
             blu_events,
-            &p_x,
-            &q_y,
+            &a0_plus_a1,
+            &b0_plus_b1,
             &modulus,
             FieldOperation::Mul,
         );
-        let a1_mul_b0 = cols.a1_mul_b0.populate_with_modulus(
-            blu_events,
-            &p_y,
-            &q_x,
-            &modulus,
-            FieldOperation::Mul,
-        );
-        let c0 = cols.c0.populate_with_modulus(
-            blu_events,
-            &a0_mul_b0,
-            &a1_mul_b1,
-            &modulus,
-            FieldOperation::Sub,
-        );
-        let c1 = cols.c1.populate_with_modulus(
-            blu_events,
-            &a0_mul_b1,
-            &a1_mul_b0,
-            &modulus,
-            FieldOperation::Add,
-        );
+        let c0 = (&a0_mul_b0 + &modulus - &a1_mul_b1) % &modulus;
+        let c1 = (&sum_mul_sum + &modulus + &modulus - &a0_mul_b0 - &a1_mul_b1) % &modulus;
         cols.c0_range.populate(blu_events, &c0, &modulus);
         cols.c1_range.populate(blu_events, &c1, &modulus);
     }
@@ -253,6 +252,24 @@ where
         let p_modulus = Polynomial::from_coefficients(&modulus_coeffs);
 
         {
+            local.a0_plus_a1.eval_with_modulus(
+                builder,
+                &p_x,
+                &p_y,
+                &p_modulus,
+                FieldOperation::Add,
+                local.is_real,
+            );
+
+            local.b0_plus_b1.eval_with_modulus(
+                builder,
+                &q_x,
+                &q_y,
+                &p_modulus,
+                FieldOperation::Add,
+                local.is_real,
+            );
+
             local.a0_mul_b0.eval_with_modulus(
                 builder,
                 &p_x,
@@ -271,55 +288,33 @@ where
                 local.is_real,
             );
 
-            local.c0.eval_with_modulus(
+            local.sum_mul_sum.eval_with_modulus(
                 builder,
-                &local.a0_mul_b0.result,
-                &local.a1_mul_b1.result,
-                &p_modulus,
-                FieldOperation::Sub,
-                local.is_real,
-            );
-        }
-
-        {
-            local.a0_mul_b1.eval_with_modulus(
-                builder,
-                &p_x,
-                &q_y,
+                &local.a0_plus_a1.result,
+                &local.b0_plus_b1.result,
                 &p_modulus,
                 FieldOperation::Mul,
                 local.is_real,
             );
-
-            local.a1_mul_b0.eval_with_modulus(
-                builder,
-                &p_y,
-                &q_x,
-                &p_modulus,
-                FieldOperation::Mul,
-                local.is_real,
-            );
-
-            local.c1.eval_with_modulus(
-                builder,
-                &local.a0_mul_b1.result,
-                &local.a1_mul_b0.result,
-                &p_modulus,
-                FieldOperation::Add,
-                local.is_real,
-            );
         }
+
+        let a0_mul_b0_poly: Polynomial<AB::Expr> = local.a0_mul_b0.result.into();
+        let a1_mul_b1_poly: Polynomial<AB::Expr> = local.a1_mul_b1.result.into();
+        let sum_mul_sum_poly: Polynomial<AB::Expr> = local.sum_mul_sum.result.into();
+
+        let c0: Polynomial<AB::Expr> = a0_mul_b0_poly.clone() - a1_mul_b1_poly.clone();
+        let c1: Polynomial<AB::Expr> = sum_mul_sum_poly - a0_mul_b0_poly - a1_mul_b1_poly;
 
         builder.when(local.is_real).assert_all_eq(
-            local.c0.result,
+            c0.coefficients().iter().cloned(),
             value_as_limbs(&local.x_access[0..num_words_field_element]),
         );
         builder.when(local.is_real).assert_all_eq(
-            local.c1.result,
+            c1.coefficients().iter().cloned(),
             value_as_limbs(&local.x_access[num_words_field_element..]),
         );
-        local.c0_range.eval(builder, &local.c0.result, &p_modulus, local.is_real);
-        local.c1_range.eval(builder, &local.c1.result, &p_modulus, local.is_real);
+        local.c0_range.eval(builder, &c0, &p_modulus, local.is_real);
+        local.c1_range.eval(builder, &c1, &p_modulus, local.is_real);
 
         builder.eval_memory_access_slice(
             local.shard,
