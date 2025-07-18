@@ -353,6 +353,12 @@ impl<SC: StarkGenericConfig, A: MachineAir<Val<SC>>> Verifier<SC, A> {
             permutation_challenges,
             public_values,
         );
+        tracing::info!(
+            "folded constraints {:?}, quotient {:?}, chip {:?}",
+            folded_constraints,
+            quotient,
+            chip.name()
+        );
 
         // Check that the constraints match the quotient, i.e.
         //     folded_constraints(zeta) / Z_H(zeta) = quotient(zeta)

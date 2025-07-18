@@ -56,13 +56,7 @@ where
 
         self.eval_control_flow_flags(builder, local, next, is_real.clone());
 
-        self.eval_memory(
-            builder,
-            local,
-            is_initialize.clone(),
-            is_compression.clone(),
-            is_finalize.clone(),
-        );
+        self.eval_memory(builder, local, is_initialize, is_compression.clone(), is_finalize);
 
         self.eval_compression_ops(builder, local, next, is_compression);
 

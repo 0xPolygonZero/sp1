@@ -58,9 +58,23 @@ impl<F: PrimeField32> MachineAir<F> for ShaCompressChip {
         );
 
         for row in &rows.clone() {
-            info!("Memory cols: {:?}", row[23..32].to_vec());
-            info!("octet {:?}", row[5..13].to_vec());
-            info!("octet_num {:?}", row[13..23].to_vec());
+            let is_initialize = row[13];
+            let mut is_compress = row[14];
+            for i in 2..9 {
+                is_compress = is_compress + row[i + 13];
+            }
+            let is_finalize = row[22];
+            let is_last_row = row[12] * row[22];
+            let is_real = is_compress + is_initialize + is_finalize;
+            if is_real.is_one() {
+                info!("Memory cols: {:?}", row[23..32].to_vec());
+                info!("octet {:?}", row[5..13].to_vec());
+                info!("octet_num {:?}", row[13..23].to_vec());
+                info!(
+                    "flags {:?}",
+                    [is_initialize, is_compress, is_finalize, is_last_row, is_real]
+                );
+            }
         }
         // Set the octet_num and octet columns for the padded rows.
         // let mut octet_num = 0;
