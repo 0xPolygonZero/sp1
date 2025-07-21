@@ -63,9 +63,7 @@ impl Syscall for U256xU2048MulSyscall {
             a,
             b_ptr,
             b,
-            lo_ptr,
             lo: lo_words.to_vec(),
-            hi_ptr,
             hi: hi_words.to_vec(),
             lo_ptr_memory,
             hi_ptr_memory,
@@ -74,6 +72,7 @@ impl Syscall for U256xU2048MulSyscall {
             lo_memory_records,
             hi_memory_records,
             local_mem_access: rt.postprocess(),
+            is_passing_event: true,
         });
 
         let sycall_event =

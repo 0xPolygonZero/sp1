@@ -1,12 +1,12 @@
 use crate::{
     air::MemoryAirBuilder,
-    memory::{value_as_limbs, MemoryCols, MemoryReadCols, MemoryWriteCols},
+    memory::{MemoryAccessCols, MemoryCols, MemoryReadCols, MemoryWriteCols, MemoryWriteColsNoVal},
     operations::field::field_op::FieldOpCols,
     utils::{limbs_from_access, pad_rows_fixed, words_to_bytes_le},
 };
 
 use num::{BigUint, One, Zero};
-use p3_air::{Air, AirBuilder, BaseAir};
+use p3_air::{Air, BaseAir};
 use p3_field::{AbstractField, PrimeField32};
 use p3_matrix::{dense::RowMajorMatrix, Matrix};
 use sp1_core_executor::{
@@ -19,8 +19,9 @@ use sp1_curves::{
     uint256::U256Field,
 };
 use sp1_derive::AlignedBorrow;
+use sp1_primitives::consts::WORD_SIZE;
 use sp1_stark::{
-    air::{BaseAirBuilder, InteractionScope, MachineAir, Polynomial, SP1AirBuilder},
+    air::{InteractionScope, MachineAir, Polynomial, SP1AirBuilder},
     MachineRecord,
 };
 use std::{
@@ -61,17 +62,15 @@ pub struct U256x2048MulCols<T> {
     /// The pointer to the second input.
     pub b_ptr: T,
 
-    pub lo_ptr: T,
-    pub hi_ptr: T,
-
     pub lo_ptr_memory: MemoryReadCols<T>,
     pub hi_ptr_memory: MemoryReadCols<T>,
 
     // Memory columns.
     pub a_memory: [MemoryReadCols<T>; WORDS_FIELD_ELEMENT],
     pub b_memory: [MemoryReadCols<T>; WORDS_FIELD_ELEMENT * 8],
-    pub lo_memory: [MemoryWriteCols<T>; WORDS_FIELD_ELEMENT * 8],
-    pub hi_memory: [MemoryWriteCols<T>; WORDS_FIELD_ELEMENT],
+    // The values of `lo_memory` and `hi_memory` can be reconstructed from the `ab_plus_carry` columns.
+    pub lo_memory: [MemoryWriteColsNoVal<T>; WORDS_FIELD_ELEMENT * 8],
+    pub hi_memory: [MemoryWriteColsNoVal<T>; WORDS_FIELD_ELEMENT],
 
     // Output values. We compute (x * y) % 2^2048 and (x * y) / 2^2048.
     pub a_mul_b1: FieldOpCols<T, U256Field>,
@@ -123,8 +122,6 @@ impl<F: PrimeField32> MachineAir<F> for U256x2048MulChip {
                         cols.clk = F::from_canonical_u32(event.clk);
                         cols.a_ptr = F::from_canonical_u32(event.a_ptr);
                         cols.b_ptr = F::from_canonical_u32(event.b_ptr);
-                        cols.lo_ptr = F::from_canonical_u32(event.lo_ptr);
-                        cols.hi_ptr = F::from_canonical_u32(event.hi_ptr);
 
                         // Populate memory accesses for lo_ptr and hi_ptr.
                         cols.lo_ptr_memory
@@ -183,6 +180,7 @@ impl<F: PrimeField32> MachineAir<F> for U256x2048MulChip {
                                 &b_array[i],
                                 &carries[i],
                                 &effective_modulus,
+                                event.is_passing_event,
                             );
                             carries[i + 1] = carry;
                         }
@@ -214,13 +212,13 @@ impl<F: PrimeField32> MachineAir<F> for U256x2048MulChip {
 
                 // Populate all the mul and carry columns with zero values.
                 cols.a_mul_b1.populate(&mut vec![], &x, &y, FieldOperation::Mul);
-                cols.ab2_plus_carry.populate_mul_and_carry(&mut vec![], &x, &y, &z, &modulus);
-                cols.ab3_plus_carry.populate_mul_and_carry(&mut vec![], &x, &y, &z, &modulus);
-                cols.ab4_plus_carry.populate_mul_and_carry(&mut vec![], &x, &y, &z, &modulus);
-                cols.ab5_plus_carry.populate_mul_and_carry(&mut vec![], &x, &y, &z, &modulus);
-                cols.ab6_plus_carry.populate_mul_and_carry(&mut vec![], &x, &y, &z, &modulus);
-                cols.ab7_plus_carry.populate_mul_and_carry(&mut vec![], &x, &y, &z, &modulus);
-                cols.ab8_plus_carry.populate_mul_and_carry(&mut vec![], &x, &y, &z, &modulus);
+                cols.ab2_plus_carry.populate_mul_and_carry(&mut vec![], &x, &y, &z, &modulus, true);
+                cols.ab3_plus_carry.populate_mul_and_carry(&mut vec![], &x, &y, &z, &modulus, true);
+                cols.ab4_plus_carry.populate_mul_and_carry(&mut vec![], &x, &y, &z, &modulus, true);
+                cols.ab5_plus_carry.populate_mul_and_carry(&mut vec![], &x, &y, &z, &modulus, true);
+                cols.ab6_plus_carry.populate_mul_and_carry(&mut vec![], &x, &y, &z, &modulus, true);
+                cols.ab7_plus_carry.populate_mul_and_carry(&mut vec![], &x, &y, &z, &modulus, true);
+                cols.ab8_plus_carry.populate_mul_and_carry(&mut vec![], &x, &y, &z, &modulus, true);
 
                 row
             },
@@ -307,20 +305,70 @@ where
             local.is_real,
         );
 
+        // Evaluate that each of the mul and carry columns are valid.
+        let outputs = [
+            &local.a_mul_b1,
+            &local.ab2_plus_carry,
+            &local.ab3_plus_carry,
+            &local.ab4_plus_carry,
+            &local.ab5_plus_carry,
+            &local.ab6_plus_carry,
+            &local.ab7_plus_carry,
+            &local.ab8_plus_carry,
+        ];
+
+        // Use the outputs results and carries to reconstruct the lo_memory and hi_memory values.
+        let mut lo_memory_values = Vec::with_capacity(WORDS_FIELD_ELEMENT * 8);
+        for i in 0..8 {
+            lo_memory_values.extend_from_slice(&outputs[i].result.0);
+        }
+        let mut lo_memory = Vec::with_capacity(local.lo_memory.len());
+        for (i, local_lo_mem) in local.lo_memory.iter().enumerate() {
+            let cur_lo_memory = MemoryWriteCols {
+                prev_value: local_lo_mem.prev_value,
+                access: MemoryAccessCols::new_from_val_and_no_val(
+                    sp1_stark::Word(
+                        lo_memory_values[i * WORD_SIZE..(i + 1) * WORD_SIZE].try_into().unwrap(),
+                    ),
+                    local_lo_mem.access,
+                ),
+            };
+            lo_memory.push(cur_lo_memory);
+        }
+
+        let hi_mem_values = outputs[outputs.len() - 1].carry.0;
+        let mut hi_memory = Vec::with_capacity(local.hi_memory.len());
+        for (i, local_hi_memory) in local.hi_memory.iter().enumerate() {
+            let cur_hi_memory = MemoryWriteCols {
+                prev_value: local_hi_memory.prev_value,
+                access: MemoryAccessCols::new_from_val_and_no_val(
+                    sp1_stark::Word(
+                        hi_mem_values[i * WORD_SIZE..(i + 1) * WORD_SIZE].try_into().unwrap(),
+                    ),
+                    local_hi_memory.access,
+                ),
+            };
+            hi_memory.push(cur_hi_memory);
+        }
+
+        // `lo_ptr` and `hi_ptr` are the pointers read from memory.
+        let hi_ptr = local.hi_ptr_memory.value().reduce::<AB>();
+        let lo_ptr = local.lo_ptr_memory.value().reduce::<AB>();
+
         // Evaluate the memory accesses for lo_memory and hi_memory.
         builder.eval_memory_access_slice(
             local.shard,
             local.clk.into() + AB::Expr::one(),
-            local.lo_ptr,
-            &local.lo_memory,
+            lo_ptr,
+            &lo_memory,
             local.is_real,
         );
 
         builder.eval_memory_access_slice(
             local.shard,
             local.clk.into() + AB::Expr::one(),
-            local.hi_ptr,
-            &local.hi_memory,
+            hi_ptr,
+            &hi_memory,
             local.is_real,
         );
 
@@ -338,18 +386,6 @@ where
         coeff_2_256.resize(32, AB::Expr::zero());
         coeff_2_256.push(AB::Expr::one());
         let modulus_polynomial: Polynomial<AB::Expr> = Polynomial::from_coefficients(&coeff_2_256);
-
-        // Evaluate that each of the mul and carry columns are valid.
-        let outputs = [
-            &local.a_mul_b1,
-            &local.ab2_plus_carry,
-            &local.ab3_plus_carry,
-            &local.ab4_plus_carry,
-            &local.ab5_plus_carry,
-            &local.ab6_plus_carry,
-            &local.ab7_plus_carry,
-            &local.ab8_plus_carry,
-        ];
 
         outputs[0].eval_mul_and_carry(
             builder,
@@ -371,31 +407,5 @@ where
                 local.is_real,
             );
         }
-
-        // Assert that the correct result is being written to hi_memory.
-        builder
-            .when(local.is_real)
-            .assert_all_eq(outputs[outputs.len() - 1].carry, value_as_limbs(&local.hi_memory));
-
-        // Loop through chunks of 8 for lo_memory and assert that each chunk is equal to
-        // corresponding result of outputs.
-        for i in 0..8 {
-            builder.when(local.is_real).assert_all_eq(
-                outputs[i].result,
-                value_as_limbs(
-                    &local.lo_memory[i * WORDS_FIELD_ELEMENT..(i + 1) * WORDS_FIELD_ELEMENT],
-                ),
-            );
-        }
-
-        // Constrain that the lo_ptr is the value of lo_ptr_memory.
-        builder
-            .when(local.is_real)
-            .assert_eq(local.lo_ptr, local.lo_ptr_memory.value().reduce::<AB>());
-
-        // Constrain that the hi_ptr is the value of hi_ptr_memory.
-        builder
-            .when(local.is_real)
-            .assert_eq(local.hi_ptr, local.hi_ptr_memory.value().reduce::<AB>());
     }
 }

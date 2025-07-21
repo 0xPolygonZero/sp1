@@ -16,6 +16,14 @@ pub struct MemoryWriteCols<T> {
     pub access: MemoryAccessCols<T>,
 }
 
+/// Memory write access, without access value.
+#[derive(AlignedBorrow, Default, Debug, Clone, Copy)]
+#[repr(C)]
+pub struct MemoryWriteColsNoVal<T> {
+    pub prev_value: Word<T>,
+    pub access: MemoryAccessColsNoVal<T>,
+}
+
 /// Memory read-write access.
 #[derive(AlignedBorrow, Default, Debug, Clone, Copy)]
 #[repr(C)]
@@ -48,6 +56,43 @@ pub struct MemoryAccessCols<T> {
     /// This column is the most significant 8 bit limb of current access timestamp - prev access
     /// timestamp.
     pub diff_8bit_limb: T,
+}
+
+#[derive(AlignedBorrow, Default, Debug, Clone, Copy)]
+#[repr(C)]
+pub struct MemoryAccessColsNoVal<T> {
+    /// The previous shard and timestamp that this memory access is being read from.
+    pub prev_shard: T,
+    pub prev_clk: T,
+
+    /// This will be true if the current shard == prev_access's shard, else false.
+    pub compare_clk: T,
+
+    /// The following columns are decomposed limbs for the difference between the current access's
+    /// timestamp and the previous access's timestamp.  Note the actual value of the timestamp
+    /// is either the accesses' shard or clk depending on the value of compare_clk.
+    ///
+    /// This column is the least significant 16 bit limb of current access timestamp - prev access
+    /// timestamp.
+    pub diff_16bit_limb: T,
+
+    /// This column is the most significant 8 bit limb of current access timestamp - prev access
+    /// timestamp.
+    pub diff_8bit_limb: T,
+}
+
+impl<T> MemoryAccessCols<T> {
+    /// Sets `MemoryAccessCols` from a value and a `MemoryAccessColsNoVal`.
+    pub fn new_from_val_and_no_val(value: Word<T>, mem_no_val: MemoryAccessColsNoVal<T>) -> Self {
+        Self {
+            value,
+            prev_shard: mem_no_val.prev_shard,
+            prev_clk: mem_no_val.prev_clk,
+            compare_clk: mem_no_val.compare_clk,
+            diff_16bit_limb: mem_no_val.diff_16bit_limb,
+            diff_8bit_limb: mem_no_val.diff_8bit_limb,
+        }
+    }
 }
 
 /// The common columns for all memory access types.

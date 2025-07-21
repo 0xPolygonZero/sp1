@@ -4,7 +4,6 @@ pub use air::*;
 
 #[cfg(test)]
 mod tests {
-    use num::{BigUint, Integer, One};
     use p3_baby_bear::BabyBear;
     use p3_matrix::dense::RowMajorMatrix;
     use rand::Rng;
@@ -15,7 +14,6 @@ mod tests {
         syscalls::SyscallCode,
         ExecutionRecord, Program,
     };
-    use sp1_primitives::consts::bytes_to_words_le;
     use sp1_stark::{
         air::MachineAir, baby_bear_poseidon2::BabyBearPoseidon2, CpuProver, StarkGenericConfig,
     };
@@ -27,7 +25,6 @@ mod tests {
         utils::{
             self, run_test,
             uni_stark::{uni_stark_prove, uni_stark_verify},
-            words_to_bytes_le_vec,
         },
     };
 
@@ -45,15 +42,6 @@ mod tests {
 
         let a: Vec<u32> = (0..8).map(|_| rng.gen()).collect();
         let b: Vec<u32> = (0..64).map(|_| rng.gen()).collect();
-
-        let uint256_a = BigUint::from_bytes_le(&words_to_bytes_le_vec(&a));
-        let uint2048_b = BigUint::from_bytes_le(&words_to_bytes_le_vec(&b));
-
-        let result = uint256_a * uint2048_b;
-
-        let two_to_2048 = BigUint::one() << 2048;
-
-        let (hi_big, lo_big) = result.div_rem(&two_to_2048);
 
         let mut a_memory_records = Vec::new();
         for i in 0..8 {
@@ -90,16 +78,9 @@ mod tests {
             prev_timestamp: lo_ts,
         };
 
-        let (lo, hi) = if pass {
-            let mut lo_bytes = lo_big.to_bytes_le();
-            lo_bytes.resize(256, 0u8);
-            let lo_words = bytes_to_words_le::<64>(&lo_bytes);
-
-            let mut hi_bytes = hi_big.to_bytes_le();
-            hi_bytes.resize(32, 0u8);
-            let hi_words = bytes_to_words_le::<8>(&hi_bytes);
-            (lo_words.to_vec(), hi_words.to_vec())
-        } else {
+        // In the following `MemoryWriteRecord`, the value does not matter
+        // as it is later directly deduced from the result of the multiplication.
+        let (lo, hi) = {
             let lo: Vec<u32> = (0..64).map(|_| rng.gen()).collect();
             let hi: Vec<u32> = (0..8).map(|_| rng.gen()).collect();
             (lo, hi)
@@ -134,9 +115,7 @@ mod tests {
             a,
             b_ptr,
             b,
-            lo_ptr,
             lo,
-            hi_ptr,
             hi,
             lo_ptr_memory,
             hi_ptr_memory,
@@ -145,6 +124,7 @@ mod tests {
             lo_memory_records,
             hi_memory_records,
             local_mem_access: Vec::new(),
+            is_passing_event: pass,
         });
 
         let syscall_code = SyscallCode::U256XU2048_MUL;

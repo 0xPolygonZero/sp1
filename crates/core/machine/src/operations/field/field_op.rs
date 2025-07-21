@@ -51,6 +51,7 @@ impl<F: PrimeField32, P: FieldParameters> FieldOpCols<F, P> {
         b: &BigUint,
         c: &BigUint,
         modulus: &BigUint,
+        is_passing: bool,
     ) -> (BigUint, BigUint) {
         let p_a: Polynomial<F> = P::to_limbs_field::<F, _>(a).into();
         let p_b: Polynomial<F> = P::to_limbs_field::<F, _>(b).into();
@@ -81,7 +82,9 @@ impl<F: PrimeField32, P: FieldParameters> FieldOpCols<F, P> {
 
         let (mut p_witness_low, mut p_witness_high) = split_u16_limbs_to_u8_limbs(&p_witness);
 
-        self.result = p_result.into();
+        if is_passing {
+            self.result = p_result.into();
+        }
         self.carry = p_carry.into();
 
         p_witness_low.resize(P::Witness::USIZE, F::zero());

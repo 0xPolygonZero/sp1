@@ -19,14 +19,10 @@ pub struct U256xU2048MulEvent {
     pub b_ptr: u32,
     /// The b value as a list of words.
     pub b: Vec<u32>,
-    /// The pointer to the lo value.
-    pub lo_ptr: u32,
     /// The memory record for the pointer to the lo value.
     pub lo_ptr_memory: MemoryReadRecord,
     /// The lo value as a list of words.
     pub lo: Vec<u32>,
-    /// The pointer to the hi value.
-    pub hi_ptr: u32,
     /// The memory record for the pointer to the hi value.
     pub hi_ptr_memory: MemoryReadRecord,
     /// The hi value as a list of words.
@@ -41,4 +37,6 @@ pub struct U256xU2048MulEvent {
     pub hi_memory_records: Vec<MemoryWriteRecord>,
     /// The local memory access events.
     pub local_mem_access: Vec<MemoryLocalEvent>,
+    /// Used for testing, in order to be able to generate failing witnesses.
+    pub is_passing_event: bool,
 }
