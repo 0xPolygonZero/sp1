@@ -108,9 +108,10 @@ impl BranchChip {
             event.a > event.b
         };
 
-        cols.a_eq_b = F::from_bool(a_eq_b);
         cols.a_lt_b = F::from_bool(a_lt_b);
         cols.a_gt_b = F::from_bool(a_gt_b);
+        // Note: a_eq_b is no longer a column, it's derived as (1 - a_lt_b) * (1 - a_gt_b) in
+        // constraints
 
         let branching = match event.opcode {
             Opcode::BEQ => a_eq_b,

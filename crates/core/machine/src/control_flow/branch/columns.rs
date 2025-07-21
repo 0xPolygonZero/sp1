@@ -44,9 +44,6 @@ pub struct BranchColumns<T> {
     /// > (is_bge | is_bgeu) & (a_eq_b | a_gt_b)
     pub is_branching: T,
 
-    /// Whether a equals b.
-    pub a_eq_b: T,
-
     /// Whether a is greater than b.
     pub a_gt_b: T,
 
