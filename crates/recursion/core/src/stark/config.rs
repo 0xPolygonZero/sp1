@@ -81,7 +81,7 @@ pub fn outer_fri_config() -> FriConfig<OuterChallengeMmcs> {
     } else {
         match std::env::var("FRI_QUERIES") {
             Ok(value) => value.parse().unwrap(),
-            Err(_) => 25,
+            Err(_) => 21, // conjectured security: 4*21 + 16 = 100 security bits
         }
     };
     FriConfig { log_blowup: 4, num_queries, proof_of_work_bits: 16, mmcs: challenge_mmcs }
@@ -98,7 +98,7 @@ pub fn outer_fri_config_with_blowup(log_blowup: usize) -> FriConfig<OuterChallen
     } else {
         match std::env::var("FRI_QUERIES") {
             Ok(value) => value.parse().unwrap(),
-            Err(_) => 100 / log_blowup,
+            Err(_) => 84 / log_blowup, // conjectured security: 84 + 16 = 100 security bits
         }
     };
     FriConfig { log_blowup, num_queries, proof_of_work_bits: 16, mmcs: challenge_mmcs }

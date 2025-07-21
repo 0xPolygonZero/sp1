@@ -60,7 +60,7 @@ pub fn sp1_fri_config() -> FriConfig<InnerChallengeMmcs> {
     let challenge_mmcs = InnerChallengeMmcs::new(InnerValMmcs::new(hash, compress));
     let num_queries = match std::env::var("FRI_QUERIES") {
         Ok(value) => value.parse().unwrap(),
-        Err(_) => 100,
+        Err(_) => 84, // conjectured security: 84*1 + 16 = 100 security bits
     };
     FriConfig { log_blowup: 1, num_queries, proof_of_work_bits: 16, mmcs: challenge_mmcs }
 }
@@ -74,7 +74,7 @@ pub fn inner_fri_config() -> FriConfig<InnerChallengeMmcs> {
     let challenge_mmcs = InnerChallengeMmcs::new(InnerValMmcs::new(hash, compress));
     let num_queries = match std::env::var("FRI_QUERIES") {
         Ok(value) => value.parse().unwrap(),
-        Err(_) => 100,
+        Err(_) => 84, // conjectured security: 84*1 + 16 = 100 security bits
     };
     FriConfig { log_blowup: 1, num_queries, proof_of_work_bits: 16, mmcs: challenge_mmcs }
 }
@@ -215,7 +215,7 @@ pub mod baby_bear_poseidon2 {
         let challenge_mmcs = ChallengeMmcs::new(ValMmcs::new(hash, compress));
         let num_queries = match std::env::var("FRI_QUERIES") {
             Ok(value) => value.parse().unwrap(),
-            Err(_) => 100,
+            Err(_) => 84, // conjectured security: 84*1 + 16 = 100 security bits
         };
         FriConfig { log_blowup: 1, num_queries, proof_of_work_bits: 16, mmcs: challenge_mmcs }
     }
@@ -228,7 +228,7 @@ pub mod baby_bear_poseidon2 {
         let challenge_mmcs = ChallengeMmcs::new(ValMmcs::new(hash, compress));
         let num_queries = match std::env::var("FRI_QUERIES") {
             Ok(value) => value.parse().unwrap(),
-            Err(_) => 50,
+            Err(_) => 42, // conjectured security: 42*2 + 16 = 100 security bits
         };
         FriConfig { log_blowup: 2, num_queries, proof_of_work_bits: 16, mmcs: challenge_mmcs }
     }
@@ -241,7 +241,7 @@ pub mod baby_bear_poseidon2 {
         let challenge_mmcs = ChallengeMmcs::new(ValMmcs::new(hash, compress));
         let num_queries = match std::env::var("FRI_QUERIES") {
             Ok(value) => value.parse().unwrap(),
-            Err(_) => 33,
+            Err(_) => 28, // conjectured security: 28*3 + 16 = 100 security bits
         };
         FriConfig { log_blowup: 3, num_queries, proof_of_work_bits: 16, mmcs: challenge_mmcs }
     }
