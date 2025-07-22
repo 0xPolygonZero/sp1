@@ -55,12 +55,13 @@ impl<P: FpOpField> Syscall for Fp2MulSyscall<P> {
         let bc1 = &BigUint::from_slice(bc1);
         let modulus = &BigUint::from_bytes_le(P::MODULUS);
 
-        #[allow(clippy::match_bool)]
-        let c0 = match (ac0 * bc0) % modulus < (ac1 * bc1) % modulus {
-            true => ((modulus + (ac0 * bc0) % modulus) - (ac1 * bc1) % modulus) % modulus,
-            false => ((ac0 * bc0) % modulus - (ac1 * bc1) % modulus) % modulus,
-        };
-        let c1 = ((ac0 * bc1) % modulus + (ac1 * bc0) % modulus) % modulus;
+        let a0_mul_b0 = (ac0 * bc0) % modulus;
+        let a1_mul_b1 = (ac1 * bc1) % modulus;
+        let a0_plus_a1 = (ac0 + ac1) % modulus;
+        let b0_plus_b1 = (bc0 + bc1) % modulus;
+        let sum_mul_sum = (a0_plus_a1 * b0_plus_b1) % modulus;
+        let c0 = (&a0_mul_b0 + modulus - &a1_mul_b1) % modulus;
+        let c1 = (&sum_mul_sum + modulus + modulus - &a0_mul_b0 - &a1_mul_b1) % modulus;
 
         // Each of c0 and c1 should use the same number of words.
         // This is regardless of how many u32 digits are required to express them.
