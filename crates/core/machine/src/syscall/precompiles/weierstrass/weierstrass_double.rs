@@ -346,15 +346,18 @@ where
         // `a` in the Weierstrass form: y^2 = x^3 + a * x + b.
         let a = E::BaseField::to_limbs_field::<AB::Expr, _>(&E::a_int());
 
+        let modulus = E::BaseField::to_limbs_field::<AB::Expr, AB::F>(&E::BaseField::modulus());
+
         // slope = slope_numerator / slope_denominator.
         let slope = {
             // slope_numerator = a + (p.x * p.x) * 3.
             {
-                local.p_x_squared_times_3.eval_with_scale(
+                local.p_x_squared_times_3.eval_scaled_mul(
                     builder,
                     &p_x,
                     &p_x,
-                    &BigUint::from(3u32),
+                    &E::BaseField::to_limbs_field::<AB::Expr, _>(&BigUint::from(3u32)),
+                    &modulus,
                     local.is_real,
                 );
 
@@ -420,7 +423,6 @@ where
             );
         }
 
-        let modulus = E::BaseField::to_limbs_field::<AB::Expr, AB::F>(&E::BaseField::modulus());
         local.x3_range.eval(builder, &local.x3_ins.result, &modulus, local.is_real);
         local.y3_range.eval(builder, &local.y3_ins.result, &modulus, local.is_real);
 

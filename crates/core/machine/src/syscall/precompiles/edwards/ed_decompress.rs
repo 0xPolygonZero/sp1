@@ -142,12 +142,8 @@ impl<V: Copy> EdDecompressCols<V> {
         // Compute dyy = d * y * y
         let d_biguint = E::d_biguint();
         let d_const = E::BaseField::to_limbs_field::<AB::F, _>(&d_biguint);
-        let d_poly: Polynomial<AB::Expr> = d_const.into();
-        let dyy_poly = &y_poly * &y_poly;
-        let d_dyy_poly = dyy_poly * d_poly;
 
-        let dyy_result: Polynomial<AB::Expr> = self.dyy.result.into();
-        self.dyy.eval_with_polynomials(builder, d_dyy_poly, p_modulus, dyy_result, self.is_real);
+        self.dyy.eval_scaled_mul(builder, &y, &y, &d_const, &p_modulus, self.is_real);
 
         self.v.eval(
             builder,

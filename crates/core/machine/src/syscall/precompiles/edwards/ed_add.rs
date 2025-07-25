@@ -24,7 +24,7 @@ use sp1_curves::{
     AffinePoint, EllipticCurve,
 };
 use sp1_derive::AlignedBorrow;
-use sp1_stark::air::{BaseAirBuilder, InteractionScope, MachineAir, Polynomial, SP1AirBuilder};
+use sp1_stark::air::{BaseAirBuilder, InteractionScope, MachineAir, SP1AirBuilder};
 
 use crate::{
     memory::{value_as_limbs, MemoryReadCols, MemoryWriteCols},
@@ -280,27 +280,19 @@ where
         let d_biguint = E::d_biguint();
         let d_const = E::BaseField::to_limbs_field::<AB::Expr, _>(&d_biguint);
 
-        let x1_mul_y1_poly: Polynomial<AB::Expr> = x1_mul_y1.into();
-        let x2_mul_y2_poly: Polynomial<AB::Expr> = x2_mul_y2.into();
-        let d_poly: Polynomial<AB::Expr> = d_const.into();
-        let x1_mul_y1_x2_mul_y2 = &x1_mul_y1_poly * &x2_mul_y2_poly;
-        let x1_mul_y1_x2_mul_y2_d = x1_mul_y1_x2_mul_y2 * d_poly;
+        let modulus =
+            Ed25519BaseField::to_limbs_field::<AB::Expr, AB::F>(&Ed25519BaseField::modulus());
 
-        let p_modulus =
-            Polynomial::from_iter(E::BaseField::modulus_field_iter::<AB::F>().map(AB::Expr::from));
-        let p_result: Polynomial<AB::Expr> = local.d_mul_f.result.into();
-        local.d_mul_f.eval_with_polynomials(
+        local.d_mul_f.eval_scaled_mul(
             builder,
-            x1_mul_y1_x2_mul_y2_d,
-            p_modulus,
-            p_result,
+            &x1_mul_y1,
+            &x2_mul_y2,
+            &d_const,
+            &modulus,
             local.is_real,
         );
 
         let d_mul_f = local.d_mul_f.result;
-
-        let modulus =
-            Ed25519BaseField::to_limbs_field::<AB::Expr, AB::F>(&Ed25519BaseField::modulus());
 
         // x3 = x3_numerator / (1 + d * f).
         local.x3_ins.eval(builder, &local.x3_numerator.result, &d_mul_f, true, local.is_real);
