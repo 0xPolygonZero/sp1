@@ -62,7 +62,7 @@ where
 
         self.eval_finalize_ops(builder, local, is_finalize);
 
-        builder.assert_eq(local.start, is_real * local.octet[0] * local.octet_num[0]);
+        builder.assert_eq(local.start, local.octet[0] * local.octet_num[0]);
         builder.receive_syscall(
             local.shard,
             local.clk,
@@ -99,9 +99,17 @@ impl ShaCompressChip {
         // Verify that the first row's octet value is correct.
         builder.when_first_row().assert_one(local.octet[0]);
 
+        let mut next_is_real = AB::Expr::zero();
+        for i in 0..10 {
+            next_is_real = next_is_real.clone() + next.octet_num[i].into();
+        }
         // Verify correct transition for octet column.
         for i in 0..8 {
-            builder.when_transition().when(local.octet[i]).assert_one(next.octet[(i + 1) % 8])
+            builder
+                .when_transition()
+                .when(next_is_real.clone())
+                .when(local.octet[i])
+                .assert_one(next.octet[(i + 1) % 8])
         }
 
         // Verify that all of the octet_num columns are bool.
@@ -109,12 +117,13 @@ impl ShaCompressChip {
             builder.assert_bool(local.octet_num[i]);
         }
 
-        // // Verify that exactly one of the octet_num columns is true.
-        // let mut octet_num_sum = AB::Expr::zero();
-        // for i in 0..10 {
-        //     octet_num_sum = octet_num_sum.clone() + local.octet_num[i].into();
-        // }
-        // builder.assert_one(octet_num_sum);
+        // Verify that exactly one of the octet_num columns is true.
+        let mut octet_num_sum = AB::Expr::zero();
+        for i in 0..10 {
+            octet_num_sum = octet_num_sum.clone() + local.octet_num[i].into();
+        }
+        builder.assert_bool(octet_num_sum.clone());
+        builder.when(is_real.clone()).assert_one(octet_num_sum);
 
         // The first row should have octet_num[0] = 1 if it's real.
         builder.when_first_row().assert_one(local.octet_num[0]);
@@ -129,11 +138,6 @@ impl ShaCompressChip {
         }
 
         // If current row is last of an octet and next row is real, octet_num should rotate by 1.
-        let mut next_is_real = AB::Expr::zero();
-        for i in 0..10 {
-            next_is_real = next_is_real.clone() + next.octet_num[i].into();
-        }
-
         for i in 0..10 {
             builder
                 .when_transition()
@@ -159,25 +163,6 @@ impl ShaCompressChip {
                 .when(local.octet_num[0] * local.octet[i])
                 .assert_word_eq(*var, *local.mem.value());
         }
-
-        // // Assert that the is_initialize flag is correct.
-        // builder.assert_eq(local.is_initialize, local.octet_num[0] * local.is_real);
-
-        // // Assert that the is_compression flag is correct.
-        // builder.assert_eq(
-        //     local.is_compression,
-        //     local.octet_num[1]
-        //         + local.octet_num[2]
-        //         + local.octet_num[3]
-        //         + local.octet_num[4]
-        //         + local.octet_num[5]
-        //         + local.octet_num[6]
-        //         + local.octet_num[7]
-        //         + local.octet_num[8],
-        // );
-
-        // // Assert that the is_finalize flag is correct.
-        // builder.assert_eq(local.is_finalize, local.octet_num[9]);
 
         builder.assert_eq(local.is_last_row.into(), local.octet[7] * local.octet_num[9]);
 
