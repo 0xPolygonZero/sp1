@@ -97,6 +97,61 @@ impl<F: PrimeField32, P: FieldParameters> FieldOpCols<F, P> {
         (result, carry)
     }
 
+    /// Populate result and carry columns from the scaled multiplication (a * b * scale) % modulus
+    pub fn populate_mul_with_scale(
+        &mut self,
+        record: &mut impl ByteRecord,
+        a: &BigUint,
+        b: &BigUint,
+        scale: u32,
+        modulus: &BigUint,
+    ) -> BigUint {
+        let p_a: Polynomial<F> = P::to_limbs_field::<F, _>(a).into();
+        let p_b: Polynomial<F> = P::to_limbs_field::<F, _>(b).into();
+        let scale_f = F::from_canonical_u32(scale);
+
+        let scaled_product = a * b * BigUint::from(scale);
+        let result = &scaled_product % modulus;
+        let carry = (&scaled_product - &result) / modulus;
+        debug_assert!(&result < modulus);
+        debug_assert!(&carry < modulus);
+        debug_assert_eq!(&carry * modulus, &scaled_product - &result);
+
+        let p_modulus_limbs =
+            modulus.to_bytes_le().iter().map(|x| F::from_canonical_u8(*x)).collect::<Vec<F>>();
+        let p_modulus: Polynomial<F> = p_modulus_limbs.iter().into();
+        let p_result: Polynomial<F> = P::to_limbs_field::<F, _>(&result).into();
+        let p_carry: Polynomial<F> = P::to_limbs_field::<F, _>(&carry).into();
+
+        // p_op = a * b * scale
+        let p_op = &p_a * &p_b * scale_f;
+        let p_vanishing = &p_op - &p_result - &p_carry * &p_modulus;
+
+        let p_witness = compute_root_quotient_and_shift(
+            &p_vanishing,
+            P::WITNESS_OFFSET,
+            P::NB_BITS_PER_LIMB as u32,
+            P::NB_WITNESS_LIMBS,
+        );
+
+        let (mut p_witness_low, mut p_witness_high) = split_u16_limbs_to_u8_limbs(&p_witness);
+
+        self.result = p_result.into();
+        self.carry = p_carry.into();
+
+        p_witness_low.resize(P::Witness::USIZE, F::zero());
+        p_witness_high.resize(P::Witness::USIZE, F::zero());
+        self.witness_low = Limbs(p_witness_low.try_into().unwrap());
+        self.witness_high = Limbs(p_witness_high.try_into().unwrap());
+
+        record.add_u8_range_checks_field(&self.result.0);
+        record.add_u8_range_checks_field(&self.carry.0);
+        record.add_u8_range_checks_field(&self.witness_low.0);
+        record.add_u8_range_checks_field(&self.witness_high.0);
+
+        result
+    }
+
     pub fn populate_carry_and_witness(
         &mut self,
         a: &BigUint,
@@ -297,6 +352,28 @@ impl<V: Copy, P: FieldParameters> FieldOpCols<V, P> {
         let p_result: Polynomial<_> = self.result.into();
         let p_op = p_a * p_b + p_c;
 
+        self.eval_with_polynomials(builder, p_op, modulus.clone(), p_result, is_real);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn eval_mul_with_scale<AB: SP1AirBuilder<Var = V>>(
+        &self,
+        builder: &mut AB,
+        a: &(impl Into<Polynomial<AB::Expr>> + Clone),
+        b: &(impl Into<Polynomial<AB::Expr>> + Clone),
+        scale: AB::F,
+        modulus: &(impl Into<Polynomial<AB::Expr>> + Clone),
+        is_real: impl Into<AB::Expr> + Clone,
+    ) where
+        V: Into<AB::Expr>,
+        Limbs<V, P::Limbs>: Copy,
+    {
+        let p_a: Polynomial<AB::Expr> = (a).clone().into();
+        let p_b: Polynomial<AB::Expr> = (b).clone().into();
+        let p_scale: Polynomial<AB::Expr> = Polynomial::from_coefficients(&[scale.into()]);
+
+        let p_result: Polynomial<AB::Expr> = self.result.into();
+        let p_op: Polynomial<<AB as AirBuilder>::Expr> = p_a * p_b * p_scale;
         self.eval_with_polynomials(builder, p_op, modulus.clone(), p_result, is_real);
     }
 
