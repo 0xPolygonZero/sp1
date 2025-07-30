@@ -13,7 +13,7 @@ pub use span::*;
 pub use test::*;
 pub use uni_stark::*;
 
-use crate::memory::MemoryCols;
+use crate::memory::{MemoryCols, MemoryColsNoVal};
 
 use generic_array::ArrayLength;
 use p3_maybe_rayon::prelude::{ParallelBridge, ParallelIterator};
@@ -43,6 +43,15 @@ pub fn pad_to_power_of_two<const N: usize, T: Clone + Default>(values: &mut Vec<
 }
 
 pub fn limbs_from_prev_access<T: Copy, N: ArrayLength, M: MemoryCols<T>>(
+    cols: &[M],
+) -> Limbs<T, N> {
+    let vec = cols.iter().flat_map(|access| access.prev_value().0).collect::<Vec<T>>();
+
+    let sized = vec.try_into().unwrap_or_else(|_| panic!("failed to convert to limbs"));
+    Limbs(sized)
+}
+
+pub fn limbs_from_prev_access_no_val<T: Copy, N: ArrayLength, M: MemoryColsNoVal<T>>(
     cols: &[M],
 ) -> Limbs<T, N> {
     let vec = cols.iter().flat_map(|access| access.prev_value().0).collect::<Vec<T>>();

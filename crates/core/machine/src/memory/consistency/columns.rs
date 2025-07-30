@@ -110,6 +110,17 @@ pub trait MemoryCols<T> {
     fn value_mut(&mut self) -> &mut Word<T>;
 }
 
+/// The common columns for all memory access types which do not include the value.
+pub trait MemoryColsNoVal<T> {
+    fn access(&self) -> &MemoryAccessColsNoVal<T>;
+
+    fn access_mut(&mut self) -> &mut MemoryAccessColsNoVal<T>;
+
+    fn prev_value(&self) -> &Word<T>;
+
+    fn prev_value_mut(&mut self) -> &mut Word<T>;
+}
+
 impl<T> MemoryCols<T> for MemoryReadCols<T> {
     fn access(&self) -> &MemoryAccessCols<T> {
         &self.access
@@ -159,6 +170,24 @@ impl<T> MemoryCols<T> for MemoryWriteCols<T> {
 
     fn value_mut(&mut self) -> &mut Word<T> {
         &mut self.access.value
+    }
+}
+
+impl<T> MemoryColsNoVal<T> for MemoryWriteColsNoVal<T> {
+    fn access(&self) -> &MemoryAccessColsNoVal<T> {
+        &self.access
+    }
+
+    fn access_mut(&mut self) -> &mut MemoryAccessColsNoVal<T> {
+        &mut self.access
+    }
+
+    fn prev_value(&self) -> &Word<T> {
+        &self.prev_value
+    }
+
+    fn prev_value_mut(&mut self) -> &mut Word<T> {
+        &mut self.prev_value
     }
 }
 

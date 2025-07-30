@@ -7,8 +7,13 @@ use std::{fmt::Debug, marker::PhantomData};
 use hashbrown::HashMap;
 use itertools::Itertools;
 use num::{BigUint, Zero};
+use sp1_primitives::consts::WORD_SIZE;
 
-use crate::air::MemoryAirBuilder;
+use crate::{
+    air::MemoryAirBuilder,
+    memory::{MemoryAccessCols, MemoryWriteColsNoVal},
+    utils::limbs_from_prev_access_no_val,
+};
 use p3_air::{Air, BaseAir};
 use p3_field::{AbstractField, PrimeField32};
 use p3_matrix::{dense::RowMajorMatrix, Matrix};
@@ -19,15 +24,18 @@ use sp1_core_executor::{
     ExecutionRecord, Program,
 };
 use sp1_curves::{
-    edwards::{ed25519::Ed25519BaseField, EdwardsParameters, NUM_LIMBS, WORDS_CURVE_POINT},
+    edwards::{ed25519::Ed25519BaseField, EdwardsParameters, WORDS_CURVE_POINT},
     params::{FieldParameters, Limbs, NumLimbs},
     AffinePoint, EllipticCurve,
 };
 use sp1_derive::AlignedBorrow;
-use sp1_stark::air::{BaseAirBuilder, InteractionScope, MachineAir, SP1AirBuilder};
+use sp1_stark::{
+    air::{InteractionScope, MachineAir, SP1AirBuilder},
+    Word,
+};
 
 use crate::{
-    memory::{value_as_limbs, MemoryReadCols, MemoryWriteCols},
+    memory::{MemoryReadCols, MemoryWriteCols},
     operations::field::{
         field_den::FieldDenCols, field_inner_product::FieldInnerProductCols, field_op::FieldOpCols,
         range::FieldLtCols,
@@ -48,7 +56,7 @@ pub struct EdAddAssignCols<T> {
     pub clk: T,
     pub p_ptr: T,
     pub q_ptr: T,
-    pub p_access: [MemoryWriteCols<T>; WORDS_CURVE_POINT],
+    pub p_access: [MemoryWriteColsNoVal<T>; WORDS_CURVE_POINT],
     pub q_access: [MemoryReadCols<T>; WORDS_CURVE_POINT],
     pub(crate) x3_numerator: FieldInnerProductCols<T, Ed25519BaseField>,
     pub(crate) y3_numerator: FieldInnerProductCols<T, Ed25519BaseField>,
@@ -252,11 +260,11 @@ where
         let local: &EdAddAssignCols<AB::Var> = (*local).borrow();
 
         let x1: Limbs<AB::Var, <Ed25519BaseField as NumLimbs>::Limbs> =
-            limbs_from_prev_access(&local.p_access[0..8]);
+            limbs_from_prev_access_no_val(&local.p_access[0..8]);
         let x2: Limbs<AB::Var, <Ed25519BaseField as NumLimbs>::Limbs> =
             limbs_from_prev_access(&local.q_access[0..8]);
         let y1: Limbs<AB::Var, <Ed25519BaseField as NumLimbs>::Limbs> =
-            limbs_from_prev_access(&local.p_access[8..16]);
+            limbs_from_prev_access_no_val(&local.p_access[8..16]);
         let y2: Limbs<AB::Var, <Ed25519BaseField as NumLimbs>::Limbs> =
             limbs_from_prev_access(&local.q_access[8..16]);
 
@@ -295,13 +303,19 @@ where
 
         // Constraint self.p_access.value = [self.x3_ins.result, self.y3_ins.result]
         // This is to ensure that p_access is updated with the new value.
-        let p_access_vec = value_as_limbs(&local.p_access);
-        builder
-            .when(local.is_real)
-            .assert_all_eq(local.x3_ins.result, p_access_vec[0..NUM_LIMBS].to_vec());
-        builder
-            .when(local.is_real)
-            .assert_all_eq(local.y3_ins.result, p_access_vec[NUM_LIMBS..NUM_LIMBS * 2].to_vec());
+        let mut p_access_all_vals = Vec::with_capacity(WORDS_CURVE_POINT * WORD_SIZE);
+        p_access_all_vals.extend_from_slice(&local.x3_ins.result.0);
+        p_access_all_vals.extend_from_slice(&local.y3_ins.result.0);
+
+        let p_access = (0..WORDS_CURVE_POINT)
+            .map(|i| MemoryWriteCols {
+                prev_value: local.p_access[i].prev_value,
+                access: MemoryAccessCols::new_from_val_and_no_val(
+                    Word(p_access_all_vals[i * WORD_SIZE..(i + 1) * WORD_SIZE].try_into().unwrap()),
+                    local.p_access[i].access,
+                ),
+            })
+            .collect::<Vec<_>>();
 
         builder.eval_memory_access_slice(
             local.shard,
@@ -315,7 +329,7 @@ where
             local.shard,
             local.clk + AB::F::from_canonical_u32(1),
             local.p_ptr,
-            &local.p_access,
+            &p_access,
             local.is_real,
         );
 

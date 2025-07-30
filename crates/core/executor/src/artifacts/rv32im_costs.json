@@ -1,5 +1,5 @@
 {
-  "U256XU2048Mul": 5849,
+  "U256XU2048Mul": 5559,
   "Bn254Fp2MulAssign": 2957,
   "SyscallInstrs": 80,
   "DivRem": 146,
@@ -32,7 +32,7 @@
   "Uint256MulMod": 880,
   "Bls12381DoubleAssign": 6876,
   "Bls12381Fp2MulAssign": 4445,
-  "EdAddAssign": 3709,
+  "EdAddAssign": 3645,
   "Bls12381Decompress": 4149,
   "Lt": 53,
   "Secp256r1DoubleAssign": 4564,
