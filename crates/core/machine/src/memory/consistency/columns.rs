@@ -222,3 +222,25 @@ impl<T> MemoryCols<T> for MemoryReadWriteCols<T> {
 pub fn value_as_limbs<T: Clone, M: MemoryCols<T>>(memory: &[M]) -> Vec<T> {
     memory.iter().flat_map(|m| m.value().clone().into_iter()).collect()
 }
+
+pub fn memory_cols_vec_from_no_vals<T: Clone>(
+    all_values: &[Word<T>],
+    mem_no_val: &[MemoryWriteColsNoVal<T>],
+) -> Vec<MemoryWriteCols<T>> {
+    (0..mem_no_val.len())
+        .map(|i| MemoryWriteCols {
+            prev_value: mem_no_val[i].prev_value.clone(),
+            access: MemoryAccessCols::new_from_val_and_no_val(
+                all_values[i].clone(),
+                mem_no_val[i].access.clone(),
+            ),
+        })
+        .collect()
+}
+
+pub fn slice_to_words<T: Copy>(slice: &[T]) -> Vec<Word<T>> {
+    slice
+        .chunks_exact(sp1_primitives::consts::WORD_SIZE)
+        .map(|chunk| Word(chunk.try_into().unwrap()))
+        .collect()
+}

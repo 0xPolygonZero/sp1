@@ -4,7 +4,12 @@ use std::{
     mem::size_of,
 };
 
-use crate::{air::MemoryAirBuilder, operations::field::range::FieldLtCols, utils::zeroed_f_vec};
+use crate::{
+    air::MemoryAirBuilder,
+    memory::{memory_cols_vec_from_no_vals, slice_to_words, MemoryWriteColsNoVal},
+    operations::field::range::FieldLtCols,
+    utils::{limbs_from_prev_access_no_val, zeroed_f_vec},
+};
 use generic_array::GenericArray;
 use itertools::Itertools;
 use num::{BigUint, Zero};
@@ -21,10 +26,10 @@ use sp1_curves::{
     weierstrass::{FieldType, FpOpField},
 };
 use sp1_derive::AlignedBorrow;
-use sp1_stark::air::{BaseAirBuilder, InteractionScope, MachineAir, Polynomial, SP1AirBuilder};
+use sp1_stark::air::{InteractionScope, MachineAir, Polynomial, SP1AirBuilder};
 
 use crate::{
-    memory::{value_as_limbs, MemoryReadCols, MemoryWriteCols},
+    memory::MemoryReadCols,
     operations::field::field_op::FieldOpCols,
     utils::{limbs_from_prev_access, pad_rows_fixed, words_to_bytes_le_vec},
 };
@@ -49,7 +54,7 @@ pub struct FpOpCols<T, P: FpOpField> {
     pub is_mul: T,
     pub x_ptr: T,
     pub y_ptr: T,
-    pub x_access: GenericArray<MemoryWriteCols<T>, P::WordsFieldElement>,
+    pub x_access: GenericArray<MemoryWriteColsNoVal<T>, P::WordsFieldElement>,
     pub y_access: GenericArray<MemoryReadCols<T>, P::WordsFieldElement>,
     pub(crate) output: FieldOpCols<T, P>,
     pub(crate) output_range: FieldLtCols<T, P>,
@@ -164,10 +169,10 @@ impl<F: PrimeField32, P: FpOpField> MachineAir<F> for FpOpChip<P> {
         // check for that operation.
 
         assert!(
-            shard.get_precompile_events(SyscallCode::BN254_FP_SUB).is_empty() &&
-                shard.get_precompile_events(SyscallCode::BN254_FP_MUL).is_empty() &&
-                shard.get_precompile_events(SyscallCode::BLS12381_FP_SUB).is_empty() &&
-                shard.get_precompile_events(SyscallCode::BLS12381_FP_MUL).is_empty()
+            shard.get_precompile_events(SyscallCode::BN254_FP_SUB).is_empty()
+                && shard.get_precompile_events(SyscallCode::BN254_FP_MUL).is_empty()
+                && shard.get_precompile_events(SyscallCode::BLS12381_FP_SUB).is_empty()
+                && shard.get_precompile_events(SyscallCode::BLS12381_FP_MUL).is_empty()
         );
 
         if let Some(shape) = shard.shape.as_ref() {
@@ -213,7 +218,7 @@ where
         // Check that only one of them is set.
         builder.assert_eq(local.is_add + local.is_sub + local.is_mul, AB::Expr::one());
 
-        let p = limbs_from_prev_access(&local.x_access);
+        let p = limbs_from_prev_access_no_val(&local.x_access);
         let q = limbs_from_prev_access(&local.y_access);
 
         let modulus_coeffs =
@@ -232,9 +237,9 @@ where
             local.is_real,
         );
 
-        builder
-            .when(local.is_real)
-            .assert_all_eq(local.output.result, value_as_limbs(&local.x_access));
+        let x_access_words = slice_to_words(local.output.result.0.as_slice());
+        let x_access = memory_cols_vec_from_no_vals(&x_access_words, &local.x_access);
+
         local.output_range.eval(builder, &local.output.result, &p_modulus, local.is_real);
 
         builder.eval_memory_access_slice(
@@ -249,7 +254,7 @@ where
             local.clk + AB::F::from_canonical_u32(1), /* We read p at +1 since p, q could be the
                                                        * same. */
             local.x_ptr,
-            &local.x_access,
+            &x_access,
             local.is_real,
         );
 
@@ -268,9 +273,9 @@ where
                 AB::F::from_canonical_u32(SyscallCode::BLS12381_FP_MUL.syscall_id()),
             ),
         };
-        let syscall_id_felt = local.is_add * add_syscall_id +
-            local.is_sub * sub_syscall_id +
-            local.is_mul * mul_syscall_id;
+        let syscall_id_felt = local.is_add * add_syscall_id
+            + local.is_sub * sub_syscall_id
+            + local.is_mul * mul_syscall_id;
 
         builder.receive_syscall(
             local.shard,

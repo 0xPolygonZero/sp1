@@ -1,6 +1,9 @@
 use crate::{
     air::MemoryAirBuilder,
-    memory::{MemoryAccessCols, MemoryCols, MemoryReadCols, MemoryWriteCols, MemoryWriteColsNoVal},
+    memory::{
+        memory_cols_vec_from_no_vals, slice_to_words, MemoryCols, MemoryReadCols, MemoryWriteCols,
+        MemoryWriteColsNoVal,
+    },
     operations::field::field_op::FieldOpCols,
     utils::{limbs_from_access, pad_rows_fixed, words_to_bytes_le},
 };
@@ -19,7 +22,6 @@ use sp1_curves::{
     uint256::U256Field,
 };
 use sp1_derive::AlignedBorrow;
-use sp1_primitives::consts::WORD_SIZE;
 use sp1_stark::{
     air::{InteractionScope, MachineAir, Polynomial, SP1AirBuilder},
     MachineRecord,
@@ -322,34 +324,38 @@ where
         for i in 0..8 {
             lo_memory_values.extend_from_slice(&outputs[i].result.0);
         }
-        let mut lo_memory = Vec::with_capacity(local.lo_memory.len());
-        for (i, local_lo_mem) in local.lo_memory.iter().enumerate() {
-            let cur_lo_memory = MemoryWriteCols {
-                prev_value: local_lo_mem.prev_value,
-                access: MemoryAccessCols::new_from_val_and_no_val(
-                    sp1_stark::Word(
-                        lo_memory_values[i * WORD_SIZE..(i + 1) * WORD_SIZE].try_into().unwrap(),
-                    ),
-                    local_lo_mem.access,
-                ),
-            };
-            lo_memory.push(cur_lo_memory);
-        }
+        let lo_memory_words = slice_to_words(&lo_memory_values);
+        let lo_memory = memory_cols_vec_from_no_vals(&lo_memory_words, &local.lo_memory);
+        // let mut lo_memory = Vec::with_capacity(local.lo_memory.len());
+        // for (i, local_lo_mem) in local.lo_memory.iter().enumerate() {
+        //     let cur_lo_memory = MemoryWriteCols {
+        //         prev_value: local_lo_mem.prev_value,
+        //         access: MemoryAccessCols::new_from_val_and_no_val(
+        //             sp1_stark::Word(
+        //                 lo_memory_values[i * WORD_SIZE..(i + 1) * WORD_SIZE].try_into().unwrap(),
+        //             ),
+        //             local_lo_mem.access,
+        //         ),
+        //     };
+        //     lo_memory.push(cur_lo_memory);
+        // }
 
         let hi_mem_values = outputs[outputs.len() - 1].carry.0;
-        let mut hi_memory = Vec::with_capacity(local.hi_memory.len());
-        for (i, local_hi_memory) in local.hi_memory.iter().enumerate() {
-            let cur_hi_memory = MemoryWriteCols {
-                prev_value: local_hi_memory.prev_value,
-                access: MemoryAccessCols::new_from_val_and_no_val(
-                    sp1_stark::Word(
-                        hi_mem_values[i * WORD_SIZE..(i + 1) * WORD_SIZE].try_into().unwrap(),
-                    ),
-                    local_hi_memory.access,
-                ),
-            };
-            hi_memory.push(cur_hi_memory);
-        }
+        let hi_memory_words = slice_to_words(&hi_mem_values);
+        let hi_memory = memory_cols_vec_from_no_vals(&hi_memory_words, &local.hi_memory);
+        // let mut hi_memory = Vec::with_capacity(local.hi_memory.len());
+        // for (i, local_hi_memory) in local.hi_memory.iter().enumerate() {
+        //     let cur_hi_memory = MemoryWriteCols {
+        //         prev_value: local_hi_memory.prev_value,
+        //         access: MemoryAccessCols::new_from_val_and_no_val(
+        //             sp1_stark::Word(
+        //                 hi_mem_values[i * WORD_SIZE..(i + 1) * WORD_SIZE].try_into().unwrap(),
+        //             ),
+        //             local_hi_memory.access,
+        //         ),
+        //     };
+        //     hi_memory.push(cur_hi_memory);
+        // }
 
         // `lo_ptr` and `hi_ptr` are the pointers read from memory.
         let hi_ptr = local.hi_ptr_memory.value().reduce::<AB>();

@@ -4,7 +4,11 @@ use std::{
     mem::size_of,
 };
 
-use crate::{air::MemoryAirBuilder, utils::zeroed_f_vec};
+use crate::{
+    air::MemoryAirBuilder,
+    memory::{memory_cols_vec_from_no_vals, slice_to_words, MemoryWriteColsNoVal},
+    utils::{limbs_from_prev_access_no_val, zeroed_f_vec},
+};
 use generic_array::GenericArray;
 use itertools::Itertools;
 use num::{BigUint, Zero};
@@ -21,11 +25,11 @@ use sp1_curves::{
     weierstrass::{FieldType, FpOpField},
 };
 use sp1_derive::AlignedBorrow;
-use sp1_stark::air::{BaseAirBuilder, InteractionScope, MachineAir, Polynomial, SP1AirBuilder};
+use sp1_stark::air::{InteractionScope, MachineAir, Polynomial, SP1AirBuilder};
 use typenum::Unsigned;
 
 use crate::{
-    memory::{value_as_limbs, MemoryReadCols, MemoryWriteCols},
+    memory::MemoryReadCols,
     operations::field::{field_op::FieldOpCols, range::FieldLtCols},
     utils::{limbs_from_prev_access, pad_rows_fixed, words_to_bytes_le_vec},
 };
@@ -44,7 +48,7 @@ pub struct Fp2AddSubAssignCols<T, P: FpOpField> {
     pub is_add: T,
     pub x_ptr: T,
     pub y_ptr: T,
-    pub x_access: GenericArray<MemoryWriteCols<T>, P::WordsCurvePoint>,
+    pub x_access: GenericArray<MemoryWriteColsNoVal<T>, P::WordsCurvePoint>,
     pub y_access: GenericArray<MemoryReadCols<T>, P::WordsCurvePoint>,
     pub(crate) c0: FieldOpCols<T, P>,
     pub(crate) c1: FieldOpCols<T, P>,
@@ -187,8 +191,8 @@ impl<F: PrimeField32, P: FpOpField> MachineAir<F> for Fp2AddSubAssignChip<P> {
         // TODO:  Fix this.
 
         assert!(
-            shard.get_precompile_events(SyscallCode::BN254_FP_SUB).is_empty() &&
-                shard.get_precompile_events(SyscallCode::BLS12381_FP_SUB).is_empty()
+            shard.get_precompile_events(SyscallCode::BN254_FP_SUB).is_empty()
+                && shard.get_precompile_events(SyscallCode::BLS12381_FP_SUB).is_empty()
         );
 
         if let Some(shape) = shard.shape.as_ref() {
@@ -231,8 +235,8 @@ where
 
         let num_words_field_element = <P as NumLimbs>::Limbs::USIZE / 4;
 
-        let p_x = limbs_from_prev_access(&local.x_access[0..num_words_field_element]);
-        let p_y = limbs_from_prev_access(&local.x_access[num_words_field_element..]);
+        let p_x = limbs_from_prev_access_no_val(&local.x_access[0..num_words_field_element]);
+        let p_y = limbs_from_prev_access_no_val(&local.x_access[num_words_field_element..]);
 
         let q_x = limbs_from_prev_access(&local.y_access[0..num_words_field_element]);
         let q_y = limbs_from_prev_access(&local.y_access[num_words_field_element..]);
@@ -267,14 +271,12 @@ where
             );
         }
 
-        builder.when(local.is_real).assert_all_eq(
-            local.c0.result,
-            value_as_limbs(&local.x_access[0..num_words_field_element]),
-        );
-        builder.when(local.is_real).assert_all_eq(
-            local.c1.result,
-            value_as_limbs(&local.x_access[num_words_field_element..]),
-        );
+        let mut x_access_all_vals = Vec::with_capacity(local.x_access.len());
+        x_access_all_vals.extend_from_slice(&local.c0.result.0);
+        x_access_all_vals.extend_from_slice(&local.c1.result.0);
+        let x_access_words = slice_to_words(&x_access_all_vals);
+        let x_access = memory_cols_vec_from_no_vals(&x_access_words, &local.x_access);
+
         local.c0_range.eval(builder, &local.c0.result, &p_modulus, local.is_real);
         local.c1_range.eval(builder, &local.c1.result, &p_modulus, local.is_real);
         builder.eval_memory_access_slice(
@@ -289,7 +291,7 @@ where
             local.clk + AB::F::from_canonical_u32(1), /* We read p at +1 since p, q could be the
                                                        * same. */
             local.x_ptr,
-            &local.x_access,
+            &x_access,
             local.is_real,
         );
 

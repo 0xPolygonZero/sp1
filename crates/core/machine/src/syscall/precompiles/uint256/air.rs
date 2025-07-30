@@ -1,15 +1,13 @@
 use crate::{
-    memory::{value_as_limbs, MemoryReadCols, MemoryWriteCols},
+    memory::{memory_cols_vec_from_no_vals, slice_to_words, MemoryReadCols, MemoryWriteColsNoVal},
     operations::field::field_op::FieldOpCols,
+    utils::limbs_from_prev_access_no_val,
 };
 
 use crate::{
     air::MemoryAirBuilder,
     operations::{field::range::FieldLtCols, IsZeroOperation},
-    utils::{
-        limbs_from_access, limbs_from_prev_access, pad_rows_fixed, words_to_bytes_le,
-        words_to_bytes_le_vec,
-    },
+    utils::{limbs_from_access, pad_rows_fixed, words_to_bytes_le, words_to_bytes_le_vec},
 };
 
 use generic_array::GenericArray;
@@ -28,7 +26,7 @@ use sp1_curves::{
 };
 use sp1_derive::AlignedBorrow;
 use sp1_stark::{
-    air::{BaseAirBuilder, InteractionScope, MachineAir, Polynomial, SP1AirBuilder},
+    air::{InteractionScope, MachineAir, Polynomial, SP1AirBuilder},
     MachineRecord,
 };
 use std::{
@@ -70,7 +68,7 @@ pub struct Uint256MulCols<T> {
 
     // Memory columns.
     // x_memory is written to with the result, which is why it is of type MemoryWriteCols.
-    pub x_memory: GenericArray<MemoryWriteCols<T>, WordsFieldElement>,
+    pub x_memory: GenericArray<MemoryWriteColsNoVal<T>, WordsFieldElement>,
     pub y_memory: GenericArray<MemoryReadCols<T>, WordsFieldElement>,
     pub modulus_memory: GenericArray<MemoryReadCols<T>, WordsFieldElement>,
 
@@ -236,7 +234,7 @@ where
 
         // We are computing (x * y) % modulus. The value of x is stored in the "prev_value" of
         // the x_memory, since we write to it later.
-        let x_limbs = limbs_from_prev_access(&local.x_memory);
+        let x_limbs = limbs_from_prev_access_no_val(&local.x_memory);
         let y_limbs = limbs_from_access(&local.y_memory);
         let modulus_limbs = limbs_from_access(&local.modulus_memory);
 
@@ -259,9 +257,9 @@ where
         coeff_2_256.resize(32, AB::Expr::zero());
         coeff_2_256.push(AB::Expr::one());
         let modulus_polynomial: Polynomial<AB::Expr> = modulus_limbs.into();
-        let p_modulus: Polynomial<AB::Expr> = modulus_polynomial *
-            (AB::Expr::one() - modulus_is_zero.into()) +
-            Polynomial::from_coefficients(&coeff_2_256) * modulus_is_zero.into();
+        let p_modulus: Polynomial<AB::Expr> = modulus_polynomial
+            * (AB::Expr::one() - modulus_is_zero.into())
+            + Polynomial::from_coefficients(&coeff_2_256) * modulus_is_zero.into();
 
         // Evaluate the uint256 multiplication
         local.output.eval_with_modulus(
@@ -287,16 +285,15 @@ where
         );
 
         // Assert that the correct result is being written to x_memory.
-        builder
-            .when(local.is_real)
-            .assert_all_eq(local.output.result, value_as_limbs(&local.x_memory));
+        let x_memory_words = slice_to_words(local.output.result.0.as_slice());
+        let x_memory = memory_cols_vec_from_no_vals(&x_memory_words, &local.x_memory);
 
         // Read and write x.
         builder.eval_memory_access_slice(
             local.shard,
             local.clk.into() + AB::Expr::one(),
             local.x_ptr,
-            &local.x_memory,
+            &x_memory,
             local.is_real,
         );
 

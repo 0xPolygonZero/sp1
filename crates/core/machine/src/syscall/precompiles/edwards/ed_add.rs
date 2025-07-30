@@ -11,7 +11,7 @@ use sp1_primitives::consts::WORD_SIZE;
 
 use crate::{
     air::MemoryAirBuilder,
-    memory::{MemoryAccessCols, MemoryWriteColsNoVal},
+    memory::{memory_cols_vec_from_no_vals, slice_to_words, MemoryWriteColsNoVal},
     utils::limbs_from_prev_access_no_val,
 };
 use p3_air::{Air, BaseAir};
@@ -29,13 +29,10 @@ use sp1_curves::{
     AffinePoint, EllipticCurve,
 };
 use sp1_derive::AlignedBorrow;
-use sp1_stark::{
-    air::{InteractionScope, MachineAir, SP1AirBuilder},
-    Word,
-};
+use sp1_stark::air::{InteractionScope, MachineAir, SP1AirBuilder};
 
 use crate::{
-    memory::{MemoryReadCols, MemoryWriteCols},
+    memory::MemoryReadCols,
     operations::field::{
         field_den::FieldDenCols, field_inner_product::FieldInnerProductCols, field_op::FieldOpCols,
         range::FieldLtCols,
@@ -307,15 +304,8 @@ where
         p_access_all_vals.extend_from_slice(&local.x3_ins.result.0);
         p_access_all_vals.extend_from_slice(&local.y3_ins.result.0);
 
-        let p_access = (0..WORDS_CURVE_POINT)
-            .map(|i| MemoryWriteCols {
-                prev_value: local.p_access[i].prev_value,
-                access: MemoryAccessCols::new_from_val_and_no_val(
-                    Word(p_access_all_vals[i * WORD_SIZE..(i + 1) * WORD_SIZE].try_into().unwrap()),
-                    local.p_access[i].access,
-                ),
-            })
-            .collect::<Vec<_>>();
+        let p_access_words = slice_to_words(&p_access_all_vals);
+        let p_access = memory_cols_vec_from_no_vals(&p_access_words, &local.p_access);
 
         builder.eval_memory_access_slice(
             local.shard,
