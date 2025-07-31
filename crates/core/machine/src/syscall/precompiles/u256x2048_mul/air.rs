@@ -1,7 +1,7 @@
 use crate::{
     air::MemoryAirBuilder,
     memory::{
-        memory_cols_vec_from_no_vals, slice_to_words, MemoryCols, MemoryReadCols, MemoryWriteCols,
+        memory_cols_vec_from_no_vals, slice_to_words, MemoryCols, MemoryReadCols,
         MemoryWriteColsNoVal,
     },
     operations::field::field_op::FieldOpCols,
