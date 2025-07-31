@@ -36,7 +36,7 @@
   "Bls12381Decompress": 4149,
   "Lt": 53,
   "Secp256r1DoubleAssign": 4564,
-  "Branch": 58,
+  "Branch": 60,
   "SyscallCore": 22,
   "Bn254Fp2AddSubAssign": 1454,
   "Bls12381FpOpAssign": 1098,
