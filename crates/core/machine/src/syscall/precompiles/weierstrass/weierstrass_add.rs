@@ -57,7 +57,6 @@ pub struct WeierstrassAddAssignCols<T, P: FieldParameters + NumWords> {
     pub(crate) slope_numerator: FieldOpCols<T, P>,
     pub(crate) slope: FieldOpCols<T, P>,
     pub(crate) slope_squared: FieldOpCols<T, P>,
-    pub(crate) p_x_plus_q_x: FieldOpCols<T, P>,
     pub(crate) x3_ins: FieldOpCols<T, P>,
     pub(crate) p_x_minus_x: FieldOpCols<T, P>,
     pub(crate) y3_ins: FieldOpCols<T, P>,
@@ -115,14 +114,7 @@ impl<E: EllipticCurve> WeierstrassAddAssignChip<E> {
         let x = {
             let slope_squared =
                 cols.slope_squared.populate(blu_events, &slope, &slope, FieldOperation::Mul);
-            let p_x_plus_q_x =
-                cols.p_x_plus_q_x.populate(blu_events, &p_x, &q_x, FieldOperation::Add);
-            let x3 = cols.x3_ins.populate(
-                blu_events,
-                &slope_squared,
-                &p_x_plus_q_x,
-                FieldOperation::Sub,
-            );
+            let x3 = cols.x3_ins.populate_sub_sub(blu_events, &slope_squared, &p_x, &q_x);
             cols.x3_range.populate(blu_events, &x3, &E::BaseField::modulus());
             x3
         };
@@ -344,13 +336,11 @@ where
         let x = {
             local.slope_squared.eval(builder, slope, slope, FieldOperation::Mul, local.is_real);
 
-            local.p_x_plus_q_x.eval(builder, &p_x, &q_x, FieldOperation::Add, local.is_real);
-
-            local.x3_ins.eval(
+            local.x3_ins.eval_sub_sub(
                 builder,
                 &local.slope_squared.result,
-                &local.p_x_plus_q_x.result,
-                FieldOperation::Sub,
+                &p_x,
+                &q_x,
                 local.is_real,
             );
 
