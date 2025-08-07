@@ -58,10 +58,10 @@ impl<F: PrimeField32, P: FieldParameters> FieldOpCols<F, P> {
 
         let mul_add = a * b + c;
         let result = &mul_add % modulus;
-        let carry = (mul_add - &result) / modulus;
+        let carry = (&mul_add - &result) / modulus;
         debug_assert!(&result < modulus);
         debug_assert!(&carry < modulus);
-        debug_assert_eq!(&carry * modulus, a * b + c - &result);
+        debug_assert_eq!(&carry * modulus, mul_add - &result);
 
         let p_modulus_limbs =
             modulus.to_bytes_le().iter().map(|x| F::from_canonical_u8(*x)).collect::<Vec<F>>();
@@ -97,7 +97,6 @@ impl<F: PrimeField32, P: FieldParameters> FieldOpCols<F, P> {
         (result, carry)
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn populate_sub_sub(
         &mut self,
         record: &mut impl ByteRecord,
@@ -106,7 +105,7 @@ impl<F: PrimeField32, P: FieldParameters> FieldOpCols<F, P> {
         c: &BigUint,
     ) -> BigUint {
         let modulus = P::modulus();
-        let result = (a + (modulus.clone() - b) + (modulus.clone() - c)) % modulus.clone();
+        let result = (a + (&modulus - b) + (&modulus - c)) % &modulus;
 
         let sum_with_result = &result + b + c;
         let carry = (&sum_with_result - a) / &modulus;
@@ -127,6 +126,62 @@ impl<F: PrimeField32, P: FieldParameters> FieldOpCols<F, P> {
         // Compute the vanishing polynomial: (result + b + c) - a - carry * modulus
         let p_op = &p_result + &p_b + &p_c;
         let p_vanishing: Polynomial<F> = &p_op - &p_a - &p_carry * &p_modulus;
+
+        let p_witness = compute_root_quotient_and_shift(
+            &p_vanishing,
+            P::WITNESS_OFFSET,
+            P::NB_BITS_PER_LIMB as u32,
+            P::NB_WITNESS_LIMBS,
+        );
+
+        let (mut p_witness_low, mut p_witness_high) = split_u16_limbs_to_u8_limbs(&p_witness);
+
+        self.result = P::to_limbs_field::<F, _>(&result);
+        self.carry = P::to_limbs_field::<F, _>(&carry);
+
+        p_witness_low.resize(P::Witness::USIZE, F::zero());
+        p_witness_high.resize(P::Witness::USIZE, F::zero());
+        self.witness_low = Limbs(p_witness_low.try_into().unwrap());
+        self.witness_high = Limbs(p_witness_high.try_into().unwrap());
+
+        // Range checks
+        record.add_u8_range_checks_field(&self.result.0);
+        record.add_u8_range_checks_field(&self.carry.0);
+        record.add_u8_range_checks_field(&self.witness_low.0);
+        record.add_u8_range_checks_field(&self.witness_high.0);
+
+        result
+    }
+
+    pub fn populate_mul_sub(
+        &mut self,
+        record: &mut impl ByteRecord,
+        a: &BigUint,
+        b: &BigUint,
+        c: &BigUint,
+    ) -> BigUint {
+        let modulus = P::modulus();
+        let c_mod = c % &modulus;
+        let product = a * b;
+        let result = (&product + &modulus - &c_mod) % &modulus;
+        let carry = (&product + &modulus - &c_mod - &result) / &modulus;
+
+        debug_assert_eq!(&product + &modulus - &c_mod, &result + &carry * &modulus);
+        debug_assert!(result < modulus);
+
+        let p_a: Polynomial<F> = P::to_limbs_field::<F, _>(a).into();
+        let p_b: Polynomial<F> = P::to_limbs_field::<F, _>(b).into();
+        let p_c: Polynomial<F> = P::to_limbs_field::<F, _>(c).into();
+        let p_result: Polynomial<F> = P::to_limbs_field::<F, _>(&result).into();
+        let p_carry: Polynomial<F> = P::to_limbs_field::<F, _>(&carry).into();
+
+        let p_modulus_limbs =
+            modulus.to_bytes_le().iter().map(|x| F::from_canonical_u8(*x)).collect::<Vec<F>>();
+        let p_modulus: Polynomial<F> = p_modulus_limbs.iter().into();
+
+        // Compute the vanishing polynomial: (a * b) - (result + c) - carry * modulus
+        let p_op = &p_a * &p_b + &p_modulus - &p_c;
+        let p_vanishing: Polynomial<F> = &p_op - &p_result - &p_carry * &p_modulus;
 
         let p_witness = compute_root_quotient_and_shift(
             &p_vanishing,
@@ -376,6 +431,29 @@ impl<V: Copy, P: FieldParameters> FieldOpCols<V, P> {
         let p_op: Polynomial<<AB as AirBuilder>::Expr> = p_a + p_b + p_c;
 
         let p_modulus = Polynomial::from_iter(P::modulus_field_iter::<AB::F>().map(AB::Expr::from));
+        self.eval_with_polynomials(builder, p_op, p_modulus, p_result, is_real);
+    }
+
+    pub fn eval_mul_sub<AB: SP1AirBuilder<Var = V>>(
+        &self,
+        builder: &mut AB,
+        a: &(impl Into<Polynomial<AB::Expr>> + Clone),
+        b: &(impl Into<Polynomial<AB::Expr>> + Clone),
+        c: &(impl Into<Polynomial<AB::Expr>> + Clone),
+        is_real: impl Into<AB::Expr> + Clone,
+    ) where
+        V: Into<AB::Expr>,
+        Limbs<V, P::Limbs>: Copy,
+    {
+        let p_a: Polynomial<AB::Expr> = (a).clone().into();
+        let p_b: Polynomial<AB::Expr> = (b).clone().into();
+        let p_c: Polynomial<AB::Expr> = (c).clone().into();
+
+        let p_modulus = Polynomial::from_iter(P::modulus_field_iter::<AB::F>().map(AB::Expr::from));
+        let p_c_neg: Polynomial<_> = p_modulus.clone() - p_c;
+        let p_result: Polynomial<_> = self.result.into();
+        let p_op: Polynomial<<AB as AirBuilder>::Expr> = p_a * p_b + p_c_neg;
+
         self.eval_with_polynomials(builder, p_op, p_modulus, p_result, is_real);
     }
 

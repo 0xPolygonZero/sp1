@@ -58,7 +58,6 @@ pub struct WeierstrassDoubleAssignCols<T, P: FieldParameters + NumWords> {
     pub(crate) x3_ins: FieldOpCols<T, P>,
     pub(crate) p_x_minus_x: FieldOpCols<T, P>,
     pub(crate) y3_ins: FieldOpCols<T, P>,
-    pub(crate) slope_times_p_x_minus_x: FieldOpCols<T, P>,
     pub(crate) x3_range: FieldLtCols<T, P>,
     pub(crate) y3_range: FieldLtCols<T, P>,
 }
@@ -129,18 +128,7 @@ impl<E: EllipticCurve + WeierstrassParameters> WeierstrassDoubleAssignChip<E> {
         // y = slope * (p.x - x) - p.y.
         {
             let p_x_minus_x = cols.p_x_minus_x.populate(blu_events, &p_x, &x, FieldOperation::Sub);
-            let slope_times_p_x_minus_x = cols.slope_times_p_x_minus_x.populate(
-                blu_events,
-                &slope,
-                &p_x_minus_x,
-                FieldOperation::Mul,
-            );
-            let y3 = cols.y3_ins.populate(
-                blu_events,
-                &slope_times_p_x_minus_x,
-                &p_y,
-                FieldOperation::Sub,
-            );
+            let y3 = cols.y3_ins.populate_mul_sub(blu_events, &slope, &p_x_minus_x, &p_y);
             cols.y3_range.populate(blu_events, &y3, &E::BaseField::modulus());
         }
     }
@@ -399,18 +387,12 @@ where
         // y = slope * (p.x - x) - p.y.
         {
             local.p_x_minus_x.eval(builder, &p_x, x, FieldOperation::Sub, local.is_real);
-            local.slope_times_p_x_minus_x.eval(
+
+            local.y3_ins.eval_mul_sub(
                 builder,
-                slope,
+                &local.slope.result,
                 &local.p_x_minus_x.result,
-                FieldOperation::Mul,
-                local.is_real,
-            );
-            local.y3_ins.eval(
-                builder,
-                &local.slope_times_p_x_minus_x.result,
                 &p_y,
-                FieldOperation::Sub,
                 local.is_real,
             );
         }
