@@ -53,7 +53,6 @@ pub struct WeierstrassDoubleAssignCols<T, P: FieldParameters + NumWords> {
     pub(crate) slope_numerator: FieldOpCols<T, P>,
     pub(crate) slope: FieldOpCols<T, P>,
     pub(crate) p_x_squared: FieldOpCols<T, P>,
-    pub(crate) p_x_squared_times_3: FieldOpCols<T, P>,
     pub(crate) slope_squared: FieldOpCols<T, P>,
     pub(crate) x3_ins: FieldOpCols<T, P>,
     pub(crate) p_x_minus_x: FieldOpCols<T, P>,
@@ -86,17 +85,11 @@ impl<E: EllipticCurve + WeierstrassParameters> WeierstrassDoubleAssignChip<E> {
             let slope_numerator = {
                 let p_x_squared =
                     cols.p_x_squared.populate(blu_events, &p_x, &p_x, FieldOperation::Mul);
-                let p_x_squared_times_3 = cols.p_x_squared_times_3.populate(
+                cols.slope_numerator.populate_mul_add(
                     blu_events,
                     &p_x_squared,
                     &BigUint::from(3u32),
-                    FieldOperation::Mul,
-                );
-                cols.slope_numerator.populate(
-                    blu_events,
                     &a,
-                    &p_x_squared_times_3,
-                    FieldOperation::Add,
                 )
             };
 
@@ -168,10 +161,10 @@ impl<F: PrimeField32, E: EllipticCurve + WeierstrassParameters> MachineAir<F>
                 // The blu map stores shard -> map(byte lookup event -> multiplicity).
                 let mut blu = Vec::new();
                 ops.iter().for_each(|(_, op)| match op {
-                    PrecompileEvent::Secp256k1Double(event) |
-                    PrecompileEvent::Secp256r1Double(event) |
-                    PrecompileEvent::Bn254Double(event) |
-                    PrecompileEvent::Bls12381Double(event) => {
+                    PrecompileEvent::Secp256k1Double(event)
+                    | PrecompileEvent::Secp256r1Double(event)
+                    | PrecompileEvent::Bn254Double(event)
+                    | PrecompileEvent::Bls12381Double(event) => {
                         let mut row = zeroed_f_vec(num_cols);
                         let cols: &mut WeierstrassDoubleAssignCols<F, E::BaseField> =
                             row.as_mut_slice().borrow_mut();
@@ -234,10 +227,10 @@ impl<F: PrimeField32, E: EllipticCurve + WeierstrassParameters> MachineAir<F>
                     let mut new_byte_lookup_events = Vec::new();
                     let cols: &mut WeierstrassDoubleAssignCols<F, E::BaseField> = row.borrow_mut();
                     match &events[idx].1 {
-                        PrecompileEvent::Secp256k1Double(event) |
-                        PrecompileEvent::Secp256r1Double(event) |
-                        PrecompileEvent::Bn254Double(event) |
-                        PrecompileEvent::Bls12381Double(event) => {
+                        PrecompileEvent::Secp256k1Double(event)
+                        | PrecompileEvent::Secp256r1Double(event)
+                        | PrecompileEvent::Bn254Double(event)
+                        | PrecompileEvent::Bls12381Double(event) => {
                             Self::populate_row(event, cols, &mut new_byte_lookup_events);
                         }
                         _ => unreachable!(),
@@ -334,19 +327,11 @@ where
             {
                 local.p_x_squared.eval(builder, &p_x, &p_x, FieldOperation::Mul, local.is_real);
 
-                local.p_x_squared_times_3.eval(
+                local.slope_numerator.eval_mul_add(
                     builder,
                     &local.p_x_squared.result,
                     &E::BaseField::to_limbs_field::<AB::Expr, _>(&BigUint::from(3u32)),
-                    FieldOperation::Mul,
-                    local.is_real,
-                );
-
-                local.slope_numerator.eval(
-                    builder,
                     &a,
-                    &local.p_x_squared_times_3.result,
-                    FieldOperation::Add,
                     local.is_real,
                 );
             };

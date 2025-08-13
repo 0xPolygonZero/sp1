@@ -28,14 +28,14 @@
   "MemoryGlobalInit": 124,
   "SyscallPrecompile": 22,
   "Secp256r1AddAssign": 3709,
-  "Bn254DoubleAssign": 3812,
+  "Bn254DoubleAssign": 3436,
   "Uint256MulMod": 880,
-  "Bls12381DoubleAssign": 5740,
+  "Bls12381DoubleAssign": 5172,
   "Bls12381Fp2MulAssign": 4445,
   "EdAddAssign": 3709,
   "Bls12381Decompress": 4149,
   "Lt": 53,
-  "Secp256r1DoubleAssign": 3812,
+  "Secp256r1DoubleAssign": 3436,
   "Branch": 58,
   "SyscallCore": 22,
   "Bn254Fp2AddSubAssign": 1454,
@@ -43,5 +43,5 @@
   "Cpu": 109,
   "ShaCompress": 506,
   "MemoryInstrs": 93,
-  "Secp256k1DoubleAssign": 3812
+  "Secp256k1DoubleAssign": 3436
 }
