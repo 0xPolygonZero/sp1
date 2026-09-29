@@ -402,3 +402,5 @@ jobs:
         run: |
           cd ./patch-testing/build-host
           cargo build
+
+# authorized GHA test by sanling1
